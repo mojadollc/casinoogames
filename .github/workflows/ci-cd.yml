@@ -1,0 +1,135 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+env:
+  NODE_VERSION: '18'
+
+jobs:
+  # ── 1. Backend Tests ──────────────────────────────────────
+  test-backend:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: backend
+
+      - name: Run tests
+        run: npm run test:ci
+        working-directory: backend
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage
+          path: backend/coverage/
+
+  # ── 2. Frontend Tests + Build ─────────────────────────────
+  test-frontend:
+    name: Frontend Tests & Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Run tests
+        run: npm run test:ci
+        working-directory: frontend
+
+      - name: Build
+        run: npm run build
+        working-directory: frontend
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          VITE_SOCKET_URL: ${{ secrets.VITE_SOCKET_URL }}
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build
+          path: frontend/build/
+          retention-days: 1
+
+  # ── 3. Deploy to VPS (main/master only) ───────────────────
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [test-backend, test-frontend]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            set -e
+            APP_DIR=/opt/casino-platform
+
+            echo "▶ Pulling latest code..."
+            cd $APP_DIR
+            git pull origin ${{ github.ref_name }}
+
+            echo "▶ Installing backend deps..."
+            cd $APP_DIR/backend
+            npm ci --production
+
+            echo "▶ Running DB migrations..."
+            cd $APP_DIR/database
+            npm ci
+            node migrations/001_initial.js || true
+            node migrations/002_game_controls.js || true
+            node migrations/003_affiliation.js || true
+
+            echo "▶ Building frontend..."
+            cd $APP_DIR/frontend
+            npm ci
+            VITE_API_URL=$(grep VITE_API_URL $APP_DIR/.env.production | cut -d= -f2) \
+            VITE_SOCKET_URL=$(grep VITE_SOCKET_URL $APP_DIR/.env.production | cut -d= -f2) \
+            npm run build
+
+            echo "▶ Restarting backend..."
+            pm2 restart casino-backend --update-env
+            pm2 save
+
+            echo "▶ Reloading Nginx..."
+            nginx -t && systemctl reload nginx
+
+            echo "▶ Health check..."
+            sleep 5
+            PORT=$(grep ^PORT $APP_DIR/.env.production | cut -d= -f2)
+            for i in $(seq 1 10); do
+              curl -sf http://127.0.0.1:$PORT/health && echo "✅ Healthy" && exit 0
+              echo "  Waiting... ($i/10)"
+              sleep 3
+            done
+            echo "❌ Health check failed" && exit 1

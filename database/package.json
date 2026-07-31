@@ -1,0 +1,13 @@
+{
+  "name": "casino-db",
+  "version": "1.0.0",
+  "scripts": {
+    "migrate": "node migrations/001_initial.js",
+    "seed": "node seeders/seed.js"
+  },
+  "dependencies": {
+    "mysql2": "^3.6.5",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.3.1"
+  }
+}

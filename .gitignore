@@ -1,0 +1,26 @@
+node_modules/
+*/node_modules/
+
+# Secrets — never commit
+.env
+.env.production
+.env.local
+.env.*.local
+SECRETS.md
+
+# Build outputs
+frontend/build/
+*/dist/
+
+# Test coverage
+coverage/
+*/coverage/
+*.lcov
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
