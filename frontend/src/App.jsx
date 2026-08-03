@@ -10,6 +10,7 @@ import GamePlay from './pages/player/GamePlay';
 import CardGame from './pages/player/CardGame';
 import SlotGame from './pages/player/SlotGame';
 import SicBoGame from './pages/player/SicBoGame';
+import LiveGame from './pages/player/LiveGame';
 import FishingGame from './pages/player/FishingGame';
 import Wallet from './pages/player/Wallet';
 import Promotions from './pages/player/Promotions';
@@ -32,14 +33,17 @@ const SICBO_GAMES = ['sic-bo', 'sicbo', 'sic-bo-game'];
 // Fishing games
 const FISHING_GAMES = ['fishing-god', 'ocean-king', 'fishing', 'fishing-game', 'golden-dragon', 'fish-hunter'];
 
-// Live / show games — use GamePlay (slot-style spin UI)
-const LIVE_GAMES = ['monopoly-live', 'crazy-time', 'lightning-roulette', 'dream-catcher', 'european-roulette', 'american-roulette', 'craps'];
+// Live / show games — use LiveGame (wheel/segment UI)
+const LIVE_GAMES = ['monopoly-live', 'crazy-time', 'lightning-roulette', 'dream-catcher'];
 
 // Game router component that determines which game UI to show
 const GameRouter = () => {
   const { slug } = useParams();
   const lowerSlug = slug?.toLowerCase() || '';
   
+  if (LIVE_GAMES.some(game => lowerSlug.includes(game))) {
+    return <LiveGame />;
+  }
   if (CARD_GAMES.some(game => lowerSlug.includes(game))) {
     return <CardGame />;
   }

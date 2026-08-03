@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useLogo } from '../../hooks/useLogo';
 
 const NAV = [
   { path: '/admin',             icon: '▣',  label: 'Dashboard'   },
@@ -54,6 +55,7 @@ export default function AdminLayout({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [open, setOpen] = useState(true);
+  const logoUrl = useLogo();
 
   const currentPage = NAV.find(n => n.path === location.pathname)?.label || 'Admin';
 
@@ -63,13 +65,20 @@ export default function AdminLayout({ children }) {
       <aside style={S.sidebar(open)}>
         <div style={S.logoBox}>
           <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
-            <div style={S.logoIcon}>🐉</div>
-            {open && (
-              <div>
-                <div style={{ fontWeight: '800', fontSize: '14px', color: '#ffd700', letterSpacing: '1px' }}>REELX</div>
-                <div style={{ fontSize: '9px', color: '#555577', letterSpacing: '2px' }}>ADMIN PANEL</div>
-              </div>
-            )}
+            {logoUrl
+              ? <img src={logoUrl} alt="Logo" style={{ height: open ? '40px' : '32px', maxWidth: open ? '140px' : '36px', objectFit: 'contain', transition: 'all 0.22s ease' }} />
+              : (
+                <>
+                  <div style={S.logoIcon}>🐉</div>
+                  {open && (
+                    <div>
+                      <div style={{ fontWeight: '800', fontSize: '14px', color: '#ffd700', letterSpacing: '1px' }}>REELX</div>
+                      <div style={{ fontSize: '9px', color: '#555577', letterSpacing: '2px' }}>ADMIN PANEL</div>
+                    </div>
+                  )}
+                </>
+              )
+            }
           </Link>
         </div>
 

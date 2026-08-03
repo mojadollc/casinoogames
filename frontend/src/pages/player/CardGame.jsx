@@ -86,6 +86,9 @@ const Card = ({ card, faceDown = false, dealing = false, winning = false }) => {
   );
 };
 
+// Games that support HIT/STAND (blackjack-style)
+const BLACKJACK_SLUGS = ['blackjack-vip', 'texas-holdem', 'teen-patti', 'andar-bahar'];
+
 export default function CardGame() {
   const { slug } = useParams();
   const navigate = useNavigate();
@@ -100,6 +103,10 @@ export default function CardGame() {
   const [result, setResult] = useState(null);
   const [lastWin, setLastWin] = useState(0);
   const [message, setMessage] = useState('');
+  // Track backend-decided outcome so HIT/STAND resolve correctly
+  const backendOutcomeRef = React.useRef(null);
+
+  const isBlackjack = BLACKJACK_SLUGS.some(s => slug?.toLowerCase().includes(s));
 
   useEffect(() => {
     walletAPI.balance().then(({ data }) => setBalance(Number(data.balance) || 0)).catch(() => {});
@@ -135,68 +142,67 @@ export default function CardGame() {
   const deal = async () => {
     if (dealing || balance < bet) return;
     setDealing(true);
-    setGameState('playing');
     setResult(null);
     setMessage('');
     setLastWin(0);
     setPlayerCards([]);
     setDealerCards([]);
+    backendOutcomeRef.current = null;
 
     try {
-      // Use backend spin to determine outcome (respects win_rate / force_outcome)
+      // Backend decides win/loss — respects win_rate / force_outcome / payout_cap
       const { data } = await gameAPI.spin(game.id, bet);
       setBalance(data.balance);
+      backendOutcomeRef.current = data;
 
-      // Generate visual cards based on backend outcome
+      const won = data.totalWin > 0;
+
+      // Build visual cards aligned to backend outcome
       const newPlayerCards = [randomCard(), randomCard()];
       const newDealerCards = [randomCard(), randomCard()];
 
-      // Animate dealing
+      if (won) {
+        newPlayerCards[1] = getCardForValue(newPlayerCards[0], 19 + Math.floor(Math.random() * 3));
+        newDealerCards[1] = getCardForValue(newDealerCards[0], 14 + Math.floor(Math.random() * 5));
+      } else {
+        newPlayerCards[1] = getCardForValue(newPlayerCards[0], 14 + Math.floor(Math.random() * 4));
+        newDealerCards[1] = getCardForValue(newDealerCards[0], 18 + Math.floor(Math.random() * 3));
+      }
+
+      // Animate deal sequence
       await new Promise(r => setTimeout(r, 200));
       setPlayerCards([newPlayerCards[0]]);
       await new Promise(r => setTimeout(r, 300));
-      setPlayerCards([newPlayerCards[0], newPlayerCards[1]]);
+      setPlayerCards([...newPlayerCards]);
       await new Promise(r => setTimeout(r, 300));
       setDealerCards([{ ...newDealerCards[0], faceDown: false }]);
       await new Promise(r => setTimeout(r, 300));
       setDealerCards([{ ...newDealerCards[0], faceDown: false }, { ...newDealerCards[1], faceDown: true }]);
 
-      // Determine visual result based on backend totalWin
-      const won = data.totalWin > 0;
-      if (won) {
-        // Adjust player hand to show winning value (19-21)
-        const targetValue = 19 + Math.floor(Math.random() * 3);
-        newPlayerCards[1] = getCardForValue(newPlayerCards[0], targetValue);
-        setPlayerCards([...newPlayerCards]);
-        // Dealer shows bust or lower value
-        const dealerTarget = Math.floor(Math.random() * 6) + 14; // 14-19 (bust or lower)
-        newDealerCards[1] = getCardForValue(newDealerCards[0], dealerTarget);
+      if (isBlackjack) {
+        // Let player use HIT / STAND — result resolved in stand()
+        setDealing(false);
+        setGameState('playing');
       } else {
-        // Player loses — dealer shows higher value
-        const playerTarget = 14 + Math.floor(Math.random() * 4); // 14-17
-        newPlayerCards[1] = getCardForValue(newPlayerCards[0], playerTarget);
-        setPlayerCards([...newPlayerCards]);
-        const dealerTarget = 18 + Math.floor(Math.random() * 3); // 18-20
-        newDealerCards[1] = getCardForValue(newDealerCards[0], dealerTarget);
-      }
-
-      await new Promise(r => setTimeout(r, 600));
-      setDealerCards([...newDealerCards]);
-      setGameState('result');
-
-      if (won) {
-        setResult('win');
-        setLastWin(data.totalWin);
-        setMessage(`🎉 You WIN! ₱${data.totalWin.toLocaleString()}`);
-      } else {
-        setResult('lose');
-        setMessage('😔 Dealer wins.');
+        // Baccarat / Dragon Tiger / Speed Baccarat — instant result
+        await new Promise(r => setTimeout(r, 600));
+        setDealerCards([...newDealerCards]);
+        setDealing(false);
+        setGameState('result');
+        if (won) {
+          setResult('win');
+          setLastWin(data.totalWin);
+          setMessage(`🎉 You WIN! ₱${data.totalWin.toLocaleString()}`);
+        } else {
+          setResult('lose');
+          setMessage('😔 Dealer wins.');
+        }
       }
     } catch (err) {
       setMessage(err.response?.data?.error || 'Deal failed');
+      setDealing(false);
       setGameState('betting');
     }
-    setDealing(false);
   };
 
   // Helper: get a card that contributes to a target hand value
@@ -209,22 +215,25 @@ export default function CardGame() {
     return { suit, rank, ...SUITS[suit] };
   };
 
-  const hit = async () => {
+  const hit = (currentCards) => {
     const newCard = randomCard();
-    const newCards = [...playerCards, newCard];
+    const newCards = [...currentCards, newCard];
     setPlayerCards(newCards);
     const value = calculateHandValue(newCards);
     if (value > 21) {
       setMessage('💥 BUST! You lose.');
       setResult('lose');
       setGameState('result');
-      revealDealerCards();
+      setDealerCards(prev => prev.map(c => ({ ...c, faceDown: false })));
     } else if (value === 21) {
-      await stand();
+      stand(newCards);
     }
+    return newCards;
   };
 
-  const stand = async () => {
+  const stand = async (currentCards) => {
+    // currentCards passed explicitly to avoid stale closure from playerCards state
+    const finalPlayerCards = currentCards || playerCards;
     setGameState('result');
     const revealedDealer = dealerCards.map(c => ({ ...c, faceDown: false }));
     setDealerCards(revealedDealer);
@@ -235,21 +244,28 @@ export default function CardGame() {
       dealerHand = [...dealerHand, randomCard()];
       setDealerCards([...dealerHand]);
     }
-    const playerValue = calculateHandValue(playerCards);
+    const playerValue = calculateHandValue(finalPlayerCards);
     const dealerValue = calculateHandValue(dealerHand);
+    const backendWon = backendOutcomeRef.current?.totalWin > 0;
     await new Promise(r => setTimeout(r, 300));
-    if (dealerValue > 21) {
-      setMessage('🎉 Dealer BUSTS! You WIN!');
+    // Visual result must agree with backend outcome to keep wallet consistent
+    if (backendWon) {
+      const winAmt = backendOutcomeRef.current.totalWin;
+      setLastWin(winAmt);
+      if (dealerValue > 21) {
+        setMessage(`🎉 Dealer BUSTS! You WIN! ₱${winAmt.toLocaleString()}`);
+      } else {
+        setMessage(`🎉 You WIN! ₱${winAmt.toLocaleString()}`);
+      }
       setResult('win');
-    } else if (playerValue > dealerValue) {
-      setMessage('🎉 You WIN!');
-      setResult('win');
-    } else if (dealerValue > playerValue) {
-      setMessage('😔 Dealer wins.');
-      setResult('lose');
     } else {
-      setMessage('🤝 PUSH - It\'s a tie!');
-      setResult('push');
+      if (playerValue === dealerValue) {
+        setMessage("🤝 PUSH — It's a tie!");
+        setResult('push');
+      } else {
+        setMessage('😔 Dealer wins.');
+        setResult('lose');
+      }
     }
   };
 
@@ -260,10 +276,6 @@ export default function CardGame() {
     setResult(null);
     setMessage('');
     setLastWin(0);
-  };
-
-  const revealDealerCards = () => {
-    setDealerCards(prev => prev.map(c => ({ ...c, faceDown: false })));
   };
 
   if (!game) return <div className="loading"><div className="spinner" /></div>;
@@ -586,7 +598,7 @@ export default function CardGame() {
           gap: '20px'
         }}>
           <button
-            onClick={hit}
+            onClick={() => hit(playerCards)}
             disabled={dealing}
             style={{
               padding: '18px 40px',
@@ -603,7 +615,7 @@ export default function CardGame() {
             HIT
           </button>
           <button
-            onClick={stand}
+            onClick={() => stand(playerCards)}
             disabled={dealing}
             style={{
               padding: '18px 40px',

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { walletAPI, notifAPI } from '../../services/api';
+import { useLogo } from '../../hooks/useLogo';
 import { io } from 'socket.io-client';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3020';
@@ -12,6 +13,7 @@ export default function Header() {
   const [unread, setUnread] = useState(0);
   const [pulse, setPulse] = useState(false);
   const [dragonGlow, setDragonGlow] = useState(false);
+  const logoUrl = useLogo();
 
   useEffect(() => {
     if (!user) return;
@@ -65,53 +67,26 @@ export default function Header() {
       }}>🐉</div>
       
       {/* Logo */}
-      <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '12px', textDecoration: 'none' }}>
-        <div style={{
-          width: '44px',
-          height: '44px',
-          background: 'linear-gradient(145deg, #ffd700, #b8860b, #8b6914)',
-          borderRadius: '12px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: '24px',
-          boxShadow: `
-            0 0 25px rgba(255, 215, 0, 0.6),
-            0 0 50px rgba(255, 215, 0, 0.3),
-            inset 0 0 10px rgba(255, 255, 255, 0.2)
-          `,
-          border: '2px solid rgba(255, 255, 255, 0.2)',
-          position: 'relative'
-        }}>
-          <span style={{
-            position: 'absolute',
-            filter: 'drop-shadow(0 0 5px #ffd700)'
-          }}>🐉</span>
-        </div>
-        <div>
-          <h1 style={{
-            background: 'linear-gradient(135deg, #ffd700 0%, #ffed4a 30%, #fff 50%, #ffed4a 70%, #ffd700 100%)',
-            backgroundSize: '200% auto',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            fontSize: '24px',
-            fontWeight: '900',
-            letterSpacing: '2px',
-            animation: 'goldShine 3s linear infinite',
-            filter: 'drop-shadow(0 0 15px rgba(255, 215, 0, 0.6))'
-          }}>
-            REELX
-          </h1>
-          <div style={{
-            fontSize: '9px',
-            color: 'var(--gold)',
-            letterSpacing: '3px',
-            textTransform: 'uppercase',
-            opacity: 0.7
-          }}>
-            Fortune Awaits
-          </div>
-        </div>
+      <Link to="/" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
+        {logoUrl
+          ? <img src={logoUrl} alt="Logo" style={{ height: '48px', maxWidth: '160px', objectFit: 'contain', filter: 'drop-shadow(0 0 8px rgba(255,215,0,0.5))' }} />
+          : (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '12px'
+            }}>
+              <span style={{ fontSize: '28px', filter: 'drop-shadow(0 0 5px #ffd700)' }}>🐉</span>
+              <h1 style={{
+                background: 'linear-gradient(135deg, #ffd700 0%, #ffed4a 30%, #fff 50%, #ffed4a 70%, #ffd700 100%)',
+                backgroundSize: '200% auto',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                fontSize: '24px', fontWeight: '900', letterSpacing: '2px',
+                animation: 'goldShine 3s linear infinite',
+                filter: 'drop-shadow(0 0 15px rgba(255,215,0,0.6))'
+              }}>REELX</h1>
+            </div>
+          )
+        }
       </Link>
 
       {/* Right side: notifications & balance */}

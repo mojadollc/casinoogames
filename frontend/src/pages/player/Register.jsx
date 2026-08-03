@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { authAPI } from '../../services/api';
+import { useLogo } from '../../hooks/useLogo';
 
 const KYC_STEPS = [
   { type: 'selfie',   label: 'Take a Selfie',          bonus: 50, icon: '🤳', desc: 'Take or upload a selfie photo' },
@@ -12,6 +13,7 @@ const KYC_STEPS = [
 export default function Register() {
   const { register } = useAuth();
   const navigate = useNavigate();
+  const logoUrl = useLogo();
   const [searchParams] = useSearchParams();
   const refCode = searchParams.get('ref');
 
@@ -239,7 +241,10 @@ export default function Register() {
       <div style={{ maxWidth: '400px', margin: '0 auto', width: '100%' }}>
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
           <Link to="/" style={{ textDecoration: 'none', display: 'inline-block' }}>
-            <h1 style={{ fontSize: '48px', marginBottom: '8px' }}>🎰</h1>
+            {logoUrl
+              ? <img src={logoUrl} alt="Logo" style={{ height: '72px', maxWidth: '200px', objectFit: 'contain', marginBottom: '8px' }} />
+              : <h1 style={{ fontSize: '48px', marginBottom: '8px' }}>🎰</h1>
+            }
           </Link>
           <h2>Create Account</h2>
           <p style={{ color: 'var(--text-muted)', marginTop: '8px' }}>Join and start winning today</p>

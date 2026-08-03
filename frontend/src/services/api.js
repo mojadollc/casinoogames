@@ -107,6 +107,12 @@ export const adminAPI = {
   auditLogs: () => api.get('/admin/audit-logs'),
   affiliations: (params) => api.get('/affiliation/admin/all', { params }),
   topReferrers: () => api.get('/affiliation/admin/top-referrers'),
+  getSettings: () => api.get('/admin/settings'),
+  uploadLogo: (file) => {
+    const fd = new FormData();
+    fd.append('logo', file);
+    return api.post('/admin/settings/logo', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
   // Game Controls (Admin)
   getGameControls: (gameId) => api.get(`/games/${gameId}/controls`),
   setGameControls: (gameId, data) => api.put(`/games/${gameId}/controls`, data),

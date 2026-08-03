@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { gameAPI, walletAPI } from '../../services/api';
+import { useLogo } from '../../hooks/useLogo';
 import { io } from 'socket.io-client';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3020';
@@ -234,7 +235,11 @@ const GAME_ICONS = {
   // Live
   'dragon-tiger':     ({ size=56 }) => <SlotSymbolIcon size={size} symbol="🐯" bg={['#FF4500','#FF6347']} />,
   'speed-baccarat':   ({ size=56 }) => <SlotSymbolIcon size={size} symbol="🃏" bg={['#00CED1','#0044aa']} />,
+  'baccarat':         ({ size=56 }) => <SlotSymbolIcon size={size} symbol="♦" bg={['#cc0000','#FFD700']} />,
   'monopoly-live':    ({ size=56 }) => <SlotSymbolIcon size={size} symbol="🎩" bg={['#FF69B4','#4B0082']} />,
+  'crazy-time':       ({ size=56 }) => <SlotSymbolIcon size={size} symbol="🎡" bg={['#FF1493','#FF69B4']} />,
+  'lightning-roulette':({ size=56 }) => <SlotSymbolIcon size={size} symbol="⚡" bg={['#FFD700','#FF8C00']} />,
+  'dream-catcher':    ({ size=56 }) => <SlotSymbolIcon size={size} symbol="🎯" bg={['#00CED1','#4B0082']} />,
   // Card
   'blackjack-vip':    ({ size=56 }) => <SlotSymbolIcon size={size} symbol="♠" bg={['#4B0082','#1a0a2e']} />,
   // Fishing
@@ -251,7 +256,6 @@ const GAME_ICONS = {
   'texas-holdem':     ({ size=56 }) => <SlotSymbolIcon size={size} symbol="♣" bg={['#1a6e1a','#FFD700']} />,
   'teen-patti':       ({ size=56 }) => <SlotSymbolIcon size={size} symbol="🃏" bg={['#cc0000','#FFD700']} />,
   'andar-bahar':      ({ size=56 }) => <SlotSymbolIcon size={size} symbol="🎴" bg={['#FF8C00','#FFD700']} />,
-  'baccarat':         ({ size=56 }) => <SlotSymbolIcon size={size} symbol="♦" bg={['#cc0000','#FFD700']} />,
 };
 
 // Reusable: glossy badge with symbol — casino icon style
@@ -370,6 +374,7 @@ export default function Home() {
   const navigate = useNavigate();
   const socketRef = useRef(null);
 
+  const logoUrl = useLogo();
   const [balance, setBalance] = useState(0);
   const [balancePulse, setBalancePulse] = useState(false);
   const [dbGames, setDbGames] = useState([]);
@@ -484,11 +489,18 @@ export default function Home() {
         <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '12px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           {/* Logo */}
           <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '16px', textDecoration: 'none' }}>
-            <div style={{ width: '50px', height: '50px', background: 'linear-gradient(135deg, #ffd700, #b8860b)', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '28px', boxShadow: '0 0 30px rgba(255, 215, 0, 0.4)' }}>🐉</div>
-            <div>
-              <div style={{ fontSize: '28px', fontWeight: '900', background: 'linear-gradient(135deg, #ffd700, #ffed4a, #ffd700)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>REELX</div>
-              <div style={{ fontSize: '10px', color: 'var(--gold)', letterSpacing: '3px' }}>PREMIUM GAMING</div>
-            </div>
+            {logoUrl
+              ? <img src={logoUrl} alt="Logo" style={{ height: '52px', maxWidth: '180px', objectFit: 'contain', filter: 'drop-shadow(0 0 10px rgba(255,215,0,0.5))' }} />
+              : (
+                <>
+                  <div style={{ width: '50px', height: '50px', background: 'linear-gradient(135deg, #ffd700, #b8860b)', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '28px', boxShadow: '0 0 30px rgba(255, 215, 0, 0.4)' }}>🐉</div>
+                  <div>
+                    <div style={{ fontSize: '28px', fontWeight: '900', background: 'linear-gradient(135deg, #ffd700, #ffed4a, #ffd700)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>REELX</div>
+                    <div style={{ fontSize: '10px', color: 'var(--gold)', letterSpacing: '3px' }}>PREMIUM GAMING</div>
+                  </div>
+                </>
+              )
+            }
           </Link>
 
           {/* Navigation */}
@@ -541,8 +553,15 @@ export default function Home() {
       <div className="mobile-header" style={{ background: 'linear-gradient(180deg, #1a0a2e, #0d0221)', padding: '16px', position: 'sticky', top: 0, zIndex: 100, borderBottom: '1px solid rgba(255, 215, 0, 0.2)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
-            <div style={{ width: '40px', height: '40px', background: 'linear-gradient(135deg, #ffd700, #b8860b)', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>🐉</div>
-            <span style={{ fontSize: '20px', fontWeight: '900', background: 'linear-gradient(135deg, #ffd700, #ffed4a)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>REELX</span>
+            {logoUrl
+              ? <img src={logoUrl} alt="Logo" style={{ height: '40px', maxWidth: '130px', objectFit: 'contain', filter: 'drop-shadow(0 0 8px rgba(255,215,0,0.5))' }} />
+              : (
+                <>
+                  <div style={{ width: '40px', height: '40px', background: 'linear-gradient(135deg, #ffd700, #b8860b)', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>🐉</div>
+                  <span style={{ fontSize: '20px', fontWeight: '900', background: 'linear-gradient(135deg, #ffd700, #ffed4a)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>REELX</span>
+                </>
+              )
+            }
           </Link>
           {user ? (
             <div onClick={() => navigate('/wallet')} style={{ padding: '8px 16px', background: balancePulse ? 'rgba(0, 245, 160, 0.2)' : 'rgba(255, 215, 0, 0.1)', borderRadius: '20px', border: `1px solid ${balancePulse ? '#00f5a0' : 'rgba(255, 215, 0, 0.3)'}`, cursor: 'pointer' }}>

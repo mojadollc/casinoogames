@@ -228,8 +228,7 @@ export default function AdminGames() {
   const filteredGames = games.filter(g => {
     const matchesCategory = selectedCategory === 'all' ||
       g.type === selectedCategory ||
-      (selectedCategory === 'slot' && (g.type === 'slot' || g.type === 'slots')) ||
-      (selectedCategory === 'slots' && (g.type === 'slot' || g.type === 'slots'));
+      (selectedCategory === 'slot' && (g.type === 'slot' || g.type === 'slots'));
     const matchesSearch = !searchQuery ||
       g.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       g.slug.toLowerCase().includes(searchQuery.toLowerCase());
@@ -377,7 +376,10 @@ export default function AdminGames() {
               <Select value={selectedCategory} onChange={e => { setSelectedCategory(e.target.value); setGamesPage(1); }} style={{ width: '140px' }}>
                 <option value="all">All</option>
                 <option value="slot">Slot</option>
+                <option value="live">Live Casino</option>
                 <option value="fishing">Fishing</option>
+                <option value="card">Card</option>
+                <option value="table">Table</option>
                 <option value="poker">Poker</option>
                 <option value="roulette">Roulette</option>
               </Select>
@@ -419,7 +421,10 @@ export default function AdminGames() {
           <Select value={selectedCategory} onChange={e => { setSelectedCategory(e.target.value); setGamesPage(1); }} style={{ width: '140px' }}>
             <option value="all">All Types</option>
             <option value="slot">Slot</option>
+            <option value="live">Live Casino</option>
             <option value="fishing">Fishing</option>
+            <option value="card">Card</option>
+            <option value="table">Table</option>
             <option value="poker">Poker</option>
             <option value="roulette">Roulette</option>
           </Select>
@@ -726,6 +731,10 @@ export default function AdminGames() {
             <Field label="Type">
               <Select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
                 <option value="slot">Slot</option>
+                <option value="live">Live Casino</option>
+                <option value="fishing">Fishing</option>
+                <option value="card">Card</option>
+                <option value="table">Table</option>
                 <option value="poker">Poker</option>
                 <option value="roulette">Roulette</option>
               </Select>

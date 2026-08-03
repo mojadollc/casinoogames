@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useLogo } from '../../hooks/useLogo';
 
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const logoUrl = useLogo();
   const [form, setForm] = useState({ email: '', password: '', otp: '' });
   const [needs2FA, setNeeds2FA] = useState(false);
   const [error, setError] = useState('');
@@ -32,7 +34,10 @@ export default function Login() {
       <div style={{ maxWidth: '400px', margin: '0 auto', width: '100%' }}>
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
           <Link to="/" style={{ textDecoration: 'none', display: 'inline-block' }}>
-            <h1 style={{ fontSize: '48px', marginBottom: '8px' }}>🎰</h1>
+            {logoUrl
+              ? <img src={logoUrl} alt="Logo" style={{ height: '72px', maxWidth: '200px', objectFit: 'contain', marginBottom: '8px' }} />
+              : <h1 style={{ fontSize: '48px', marginBottom: '8px' }}>🎰</h1>
+            }
           </Link>
           <h2>Welcome Back</h2>
           <p style={{ color: 'var(--text-muted)', marginTop: '8px' }}>Sign in to continue playing</p>

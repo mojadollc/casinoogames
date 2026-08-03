@@ -70,23 +70,52 @@ router.get('/stats', authenticate, async (req, res) => {
 router.get('/admin/all', authenticate, async (req, res) => {
   if (req.user.role_id < 2) return res.status(403).json({ error: 'Admin only' });
   try {
-    const { page = 1, limit = 50, search } = req.query;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, parseInt(req.query.limit) || 20);
     const offset = (page - 1) * limit;
-    let sql = `SELECT a.*, referrer.username as referrer_username, referrer.email as referrer_email,
-      referee.username as referee_username, referee.email as referee_email
-      FROM affiliations a JOIN users referrer ON referrer.id = a.referrer_id
-      JOIN users referee ON referee.id = a.referee_id`;
+    const search = req.query.search || '';
+    const depositedOnly = req.query.deposited === '1';
+
+    const conditions = [];
     const params = [];
+
     if (search) {
-      sql += ` WHERE referrer.username LIKE ? OR referrer.email LIKE ? OR referee.username LIKE ? OR referee.email LIKE ?`;
-      const p = `%${search}%`; params.push(p, p, p, p);
+      conditions.push('(referrer.username LIKE ? OR referrer.email LIKE ? OR referee.username LIKE ? OR referee.email LIKE ?)');
+      const p = `%${search}%`;
+      params.push(p, p, p, p);
     }
-    sql += ` ORDER BY a.created_at DESC LIMIT ? OFFSET ?`;
-    params.push(parseInt(limit), offset);
-    const result = await query(sql, params);
-    const countResult = await query(`SELECT COUNT(*) as total FROM affiliations`);
-    res.json({ data: result.rows, total: countResult.rows[0].total });
-  } catch (err) { res.status(500).json({ error: 'Failed to get affiliations' }); }
+    if (depositedOnly) {
+      conditions.push('a.has_deposited = 1');
+    }
+
+    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+
+    const baseFrom = `FROM affiliations a
+      JOIN users referrer ON referrer.id = a.referrer_id
+      JOIN users referee  ON referee.id  = a.referee_id
+      ${where}`;
+
+    const [rows] = await require('../config/database').pool.query(
+      `SELECT a.id, a.referral_code, a.status, a.has_deposited,
+              a.total_deposited, a.commission_earned, a.created_at,
+              referrer.username AS referrer_username, referrer.email AS referrer_email,
+              referee.username  AS referee_username,  referee.email  AS referee_email
+       ${baseFrom}
+       ORDER BY a.created_at DESC
+       LIMIT ${limit} OFFSET ${offset}`,
+      params
+    );
+
+    const [[countRow]] = await require('../config/database').pool.query(
+      `SELECT COUNT(*) AS total ${baseFrom}`,
+      params
+    );
+
+    res.json({ data: rows, total: parseInt(countRow.total) });
+  } catch (err) {
+    console.error('affiliations admin/all error:', err.message);
+    res.status(500).json({ error: 'Failed to get affiliations' });
+  }
 });
 
 router.get('/admin/top-referrers', authenticate, async (req, res) => {

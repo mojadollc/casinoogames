@@ -5,7 +5,7 @@ const { query } = require('../config/database');
 const { authenticate, isAdmin } = require('../middleware/auth');
 const { creditWallet } = require('../wallet/routes');
 
-const storage = multer.diskStorage({
+const thumbnailStorage = multer.diskStorage({
   destination: path.join(__dirname, '../uploads/thumbnails'),
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
@@ -13,10 +13,26 @@ const storage = multer.diskStorage({
   },
 });
 const upload = multer({
-  storage,
+  storage: thumbnailStorage,
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (/^image\/(jpeg|png|webp|gif)$/.test(file.mimetype)) cb(null, true);
+    else cb(new Error('Only image files are allowed'));
+  },
+});
+
+const logoStorage = multer.diskStorage({
+  destination: path.join(__dirname, '../uploads'),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `logo${ext}`);
+  },
+});
+const uploadLogo = multer({
+  storage: logoStorage,
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (/^image\/(jpeg|png|webp|svg\+xml)$/.test(file.mimetype)) cb(null, true);
     else cb(new Error('Only image files are allowed'));
   },
 });
@@ -328,6 +344,50 @@ router.get('/audit-logs', adminAuth, async (req, res) => {
 router.get('/roles', adminAuth, async (req, res) => {
   const result = await query('SELECT * FROM roles');
   res.json(result.rows);
+});
+
+// Platform settings (logo, etc.)
+router.get('/settings', async (req, res) => {
+  try {
+    await query('CREATE TABLE IF NOT EXISTS platform_settings (`key` VARCHAR(100) PRIMARY KEY, value TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)');
+    const result = await query('SELECT `key`, value FROM platform_settings');
+    const settings = {};
+    result.rows.forEach(r => { settings[r.key] = r.value; });
+    res.json(settings);
+  } catch (err) {
+    console.error('settings GET error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/settings/logo', adminAuth, (req, res, next) => {
+  const fs = require('fs');
+  const uploadsDir = path.join(__dirname, '../uploads');
+  if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+  uploadLogo.single('logo')(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: 'File too large. Maximum size is 2MB.' });
+      }
+      return res.status(400).json({ error: err.message });
+    }
+    next();
+  });
+}, async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const logoUrl = `/uploads/${req.file.filename}`;
+    await query('CREATE TABLE IF NOT EXISTS platform_settings (`key` VARCHAR(100) PRIMARY KEY, value TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)');
+    await query('INSERT INTO platform_settings (`key`, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = NOW()', ['logo_url', logoUrl]);
+    try {
+      await query('INSERT INTO audit_logs (id, user_id, action, entity, entity_id, details) VALUES (UUID(),?,?,?,?,?)',
+        [req.user.id, 'logo_upload', 'platform', null, JSON.stringify({ logoUrl })]);
+    } catch {} // audit log is non-critical
+    res.json({ logoUrl });
+  } catch (err) {
+    console.error('logo upload error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

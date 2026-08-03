@@ -43,19 +43,81 @@ async function seed() {
       await conn.execute(`INSERT IGNORE INTO wallets (id, user_id, balance) VALUES (UUID(), ?, 5000)`, [playerRow[0].id]);
     }
 
-    // Games
-    const games = [
-      ['Lucky Sevens', 'lucky-sevens', 96.00, 1, 10000],
-      ['Golden Dragon', 'golden-dragon', 95.50, 5, 50000],
-      ['Fruit Frenzy', 'fruit-frenzy', 97.00, 1, 5000],
-      ['Diamond Rush', 'diamond-rush', 94.50, 10, 100000],
-      ['Mega Fortune', 'mega-fortune', 96.50, 5, 25000],
-      ['Wild West', 'wild-west', 95.00, 2, 20000],
+    // Games — slots
+    const slots = [
+      ['Lucky Sevens',       'lucky-sevens',        96.00, 1,  10000],
+      ['Golden Dragon',      'golden-dragon',        95.50, 5,  50000],
+      ['Fruit Frenzy',       'fruit-frenzy',         97.00, 1,   5000],
+      ['Diamond Rush',       'diamond-rush',         94.50, 10, 100000],
+      ['Mega Fortune',       'mega-fortune',         96.50, 5,  25000],
+      ['Wild West',          'wild-west',            95.00, 2,  20000],
+      ['Fortune Tiger',      'fortune-tiger',        96.80, 5,  50000],
+      ['Fortune Ox',         'fortune-ox',           96.50, 5,  50000],
+      ['Fortune Mouse',      'fortune-mouse',        96.80, 5,  50000],
+      ['Gates of Olympus',   'gates-of-olympus',     96.50, 5,  50000],
+      ['Starlight Princess', 'starlight-princess',   96.50, 5,  50000],
+      ['Sweet Bonanza',      'sweet-bonanza',        96.50, 5,  50000],
+      ['Wild Bandito',       'wild-bandito',         96.70, 5,  50000],
+      ['Mahjong Ways',       'mahjong-ways',         96.90, 5,  50000],
+      ['Mahjong Ways 2',     'mahjong-ways-2',       96.95, 5,  50000],
+      ['Dragon Legend',      'dragon-legend',        97.00, 5,  50000],
+      ['Lucky Neko',         'lucky-neko',           96.40, 5,  50000],
+      ['Bali Vacation',      'bali-vacation',        96.70, 5,  50000],
+      ['Caishen Wins',       'caishen-wins',         96.80, 5,  50000],
+      ['Double Fortune',     'double-fortune',       96.90, 5,  50000],
+      ['Gem Saviour',        'gem-saviour',          96.70, 5,  50000],
+      ['Dragon Fortune',     'dragon-fortune',       95.50, 5,  50000],
     ];
-    for (const [name, slug, rtp, min_bet, max_bet] of games) {
+    for (const [name, slug, rtp, min_bet, max_bet] of slots) {
       await conn.execute(
         `INSERT IGNORE INTO games (id, name, slug, type, rtp, min_bet, max_bet, config)
          VALUES (UUID(), ?, ?, 'slot', ?, ?, ?, '{}')`,
+        [name, slug, rtp, min_bet, max_bet]
+      );
+    }
+
+    // Games — live casino
+    const liveGames = [
+      ['Dragon Tiger',       'dragon-tiger',        96.50, 10, 100000],
+      ['Speed Baccarat',     'speed-baccarat',      98.90, 10, 100000],
+      ['Baccarat',           'baccarat',            98.90, 10, 100000],
+      ['Monopoly Live',      'monopoly-live',       96.23, 10, 100000],
+      ['Crazy Time',         'crazy-time',          96.08, 10, 100000],
+      ['Lightning Roulette', 'lightning-roulette',  97.30, 10, 100000],
+      ['Dream Catcher',      'dream-catcher',       96.58, 10, 100000],
+    ];
+    for (const [name, slug, rtp, min_bet, max_bet] of liveGames) {
+      await conn.execute(
+        `INSERT IGNORE INTO games (id, name, slug, type, rtp, min_bet, max_bet, config)
+         VALUES (UUID(), ?, ?, 'live', ?, ?, ?, '{}')`,
+        [name, slug, rtp, min_bet, max_bet]
+      );
+    }
+
+    // Games — fishing
+    const fishingGames = [
+      ['Fishing God',   'fishing-god',   96.00, 5, 50000],
+      ['Ocean King',    'ocean-king',    96.00, 5, 50000],
+      ['Fish Hunter',   'fish-hunter',   96.00, 5, 50000],
+    ];
+    for (const [name, slug, rtp, min_bet, max_bet] of fishingGames) {
+      await conn.execute(
+        `INSERT IGNORE INTO games (id, name, slug, type, rtp, min_bet, max_bet, config)
+         VALUES (UUID(), ?, ?, 'fishing', ?, ?, ?, '{}')`,
+        [name, slug, rtp, min_bet, max_bet]
+      );
+    }
+
+    // Games — card
+    const cardGames = [
+      ['Blackjack VIP',  'blackjack-vip',  99.50, 10, 100000],
+      ['Teen Patti',     'teen-patti',     97.00, 10,  50000],
+      ['Andar Bahar',    'andar-bahar',    97.00, 10,  50000],
+    ];
+    for (const [name, slug, rtp, min_bet, max_bet] of cardGames) {
+      await conn.execute(
+        `INSERT IGNORE INTO games (id, name, slug, type, rtp, min_bet, max_bet, config)
+         VALUES (UUID(), ?, ?, 'card', ?, ?, ?, '{}')`,
         [name, slug, rtp, min_bet, max_bet]
       );
     }

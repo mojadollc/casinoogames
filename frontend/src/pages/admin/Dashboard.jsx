@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { adminAPI } from '../../services/api';
+import { useLogo } from '../../hooks/useLogo';
 
 /* ── Shared primitives ─────────────────────────────────── */
 const Card = ({ children, style }) => (
@@ -61,14 +62,21 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState(null);
   const [tab, setTab] = useState('overview');
   const [loading, setLoading] = useState(true);
+  const logoUrl = useLogo();
+  const [logoPreview, setLogoPreview] = useState(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoMsg, setLogoMsg] = useState('');
+  const logoInputRef = useRef();
 
   const [affiliations, setAffiliations] = useState([]);
   const [affSearch, setAffSearch] = useState('');
   const [affTab, setAffTab] = useState('all');
   const [affLoading, setAffLoading] = useState(false);
   const [affPage, setAffPage] = useState(1);
-  const [affStats, setAffStats] = useState({ total: 0, deposited: 0, not_deposited: 0, total_deposited: 0 });
-  const AFF_PER_PAGE = 15;
+  const [affTotal, setAffTotal] = useState(0);
+  const [affStats, setAffStats] = useState({ total: 0, deposited: 0, not_deposited: 0, total_deposited: 0, total_commission: 0 });
+  const [affError, setAffError] = useState('');
+  const AFF_PER_PAGE = 20;
 
   useEffect(() => {
     adminAPI.dashboard()
@@ -78,33 +86,53 @@ export default function AdminDashboard() {
   }, []);
 
   useEffect(() => {
-    if (tab === 'affiliations') loadAffiliations();
-  }, [tab, affSearch]);
+    if (tab === 'affiliations') loadAffiliations(1);
+  }, [tab]);
 
-  const loadAffiliations = async () => {
+  useEffect(() => {
+    if (tab !== 'affiliations') return;
+    loadAffiliations(1);
+  }, [affTab]);
+
+  // Debounced search
+  useEffect(() => {
+    if (tab !== 'affiliations') return;
+    const t = setTimeout(() => loadAffiliations(1), 400);
+    return () => clearTimeout(t);
+  }, [affSearch]);
+
+  const loadAffiliations = async (page = affPage) => {
     setAffLoading(true);
+    setAffError('');
     try {
-      const [affResult] = await Promise.all([
-        adminAPI.affiliations({ search: affSearch, limit: 200 }),
-      ]);
-      const data = affResult.data.data || [];
-      setAffiliations(data);
+      const params = {
+        page,
+        limit: AFF_PER_PAGE,
+        ...(affSearch ? { search: affSearch } : {}),
+        ...(affTab === 'deposited' ? { deposited: '1' } : {}),
+      };
+      const affResult = await adminAPI.affiliations(params);
+      const rows = affResult.data.data || [];
+      const total = parseInt(affResult.data.total) || 0;
+      setAffiliations(rows);
+      setAffTotal(total);
+      setAffPage(page);
       setAffStats({
-        total: data.length,
-        deposited: data.filter(a => a.has_deposited).length,
-        not_deposited: data.filter(a => !a.has_deposited).length,
-        total_deposited: data.reduce((s, a) => s + Number(a.total_deposited || 0), 0),
+        total,
+        deposited:        rows.filter(a => a.has_deposited).length,
+        not_deposited:    rows.filter(a => !a.has_deposited).length,
+        total_deposited:  rows.reduce((s, a) => s + Number(a.total_deposited || 0), 0),
+        total_commission: rows.reduce((s, a) => s + Number(a.commission_earned || 0), 0),
       });
-      setAffPage(1);
-    } catch {}
+    } catch (err) {
+      setAffError(err.response?.data?.error || 'Failed to load affiliations');
+    }
     setAffLoading(false);
   };
 
   if (loading) return <div className="loading"><div className="spinner" /></div>;
   if (!stats) return <p style={{ color: '#ff4757', padding: '20px' }}>Failed to load dashboard. Check backend logs.</p>;
 
-  const affFiltered = affiliations.filter(a => affTab === 'all' ? true : a.has_deposited);
-  const affPaged = affFiltered.slice((affPage - 1) * AFF_PER_PAGE, affPage * AFF_PER_PAGE);
 
   return (
     <div style={{ maxWidth: '1280px' }}>
@@ -116,7 +144,7 @@ export default function AdminDashboard() {
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: '4px', marginBottom: '28px', borderBottom: '1px solid #1e1e2e', paddingBottom: '0' }}>
-        {[['overview', 'Overview'], ['affiliations', 'Affiliations']].map(([key, label]) => (
+        {[['overview', 'Overview'], ['affiliations', 'Affiliations'], ['branding', 'Branding']].map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)} style={{
             padding: '10px 18px', fontSize: '13px', fontWeight: '600',
             background: 'none', border: 'none',
@@ -189,27 +217,128 @@ export default function AdminDashboard() {
         </>
       )}
 
+      {/* ── BRANDING ── */}
+      {tab === 'branding' && (
+        <Card style={{ padding: '28px', maxWidth: '520px' }}>
+          <div style={{ fontSize: '11px', fontWeight: '700', color: '#555577', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '20px' }}>Platform Logo</div>
+
+          <div style={{ marginBottom: '24px' }}>
+            <div style={{ fontSize: '12px', color: '#555577', marginBottom: '10px' }}>Current Logo</div>
+            <div style={{
+              width: '180px', height: '80px', borderRadius: '10px',
+              background: '#0f0f1a', border: '1px solid #1e1e2e',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+            }}>
+              {logoPreview
+                ? <img src={logoPreview} alt="preview" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                : logoUrl
+                  ? <img src={logoUrl} alt="logo" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                  : <span style={{ fontSize: '28px' }}>🐉</span>
+              }
+            </div>
+          </div>
+
+          <div style={{
+            padding: '12px 14px', borderRadius: '8px', marginBottom: '20px',
+            background: 'rgba(96,165,250,0.06)', border: '1px solid rgba(96,165,250,0.2)',
+          }}>
+            <div style={{ fontSize: '12px', color: '#60a5fa', fontWeight: '600', marginBottom: '6px' }}>📌 Recommended Specs</div>
+            <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '12px', color: '#8888aa', lineHeight: '1.9' }}>
+              <li>Format: <strong style={{ color: '#c0c0d8' }}>PNG or SVG</strong> (transparent background)</li>
+              <li>Size: <strong style={{ color: '#c0c0d8' }}>400 × 160 px</strong> minimum</li>
+              <li>Aspect ratio: <strong style={{ color: '#c0c0d8' }}>2.5 : 1</strong> (wide logo)</li>
+              <li>Max file size: <strong style={{ color: '#c0c0d8' }}>2 MB</strong></li>
+            </ul>
+          </div>
+
+          <input
+            ref={logoInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/svg+xml"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const file = e.target.files[0];
+              if (!file) return;
+              if (file.size > 2 * 1024 * 1024) {
+                setLogoMsg('❌ File too large. Maximum size is 2MB.');
+                e.target.value = '';
+                return;
+              }
+              setLogoPreview(URL.createObjectURL(file));
+              setLogoMsg('');
+            }}
+          />
+
+          <button
+            onClick={() => logoInputRef.current.click()}
+            style={{
+              width: '100%', padding: '12px', borderRadius: '8px', marginBottom: '12px',
+              background: '#0f0f1a', border: '2px dashed #1e1e2e',
+              color: '#8888aa', fontSize: '13px', cursor: 'pointer',
+            }}
+          >
+            {logoPreview ? '🖼️ Change Image' : '📤 Select Logo Image'}
+          </button>
+
+          {logoPreview && (
+            <button
+              disabled={logoUploading}
+              onClick={async () => {
+                const file = logoInputRef.current.files[0];
+                if (!file) return;
+                setLogoUploading(true);
+                setLogoMsg('');
+                try {
+                  await adminAPI.uploadLogo(file);
+                  localStorage.removeItem('platform_logo_url');
+                  setLogoMsg('✅ Logo uploaded! Refreshing...');
+                  setTimeout(() => window.location.reload(), 1200);
+                } catch (err) {
+                  setLogoMsg('❌ ' + (err.response?.data?.error || 'Upload failed'));
+                }
+                setLogoUploading(false);
+              }}
+              className="btn btn-primary"
+              style={{ width: '100%' }}
+            >
+              {logoUploading ? 'Uploading...' : '✅ Save Logo'}
+            </button>
+          )}
+
+          {logoMsg && (
+            <p style={{ marginTop: '12px', fontSize: '13px', color: logoMsg.startsWith('✅') ? '#00f5a0' : '#ff4757' }}>
+              {logoMsg}
+            </p>
+          )}
+        </Card>
+      )}
+
       {/* ── AFFILIATIONS ── */}
       {tab === 'affiliations' && (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-            <StatCard icon="👥" label="Total Referrals"  value={affStats.total} />
-            <StatCard icon="✅" label="Deposited"        value={affStats.deposited}     accent="#00f5a0" />
-            <StatCard icon="⏳" label="Not Deposited"    value={affStats.not_deposited} accent="#8888aa" />
-            <StatCard icon="💰" label="Total Deposited"  value={`₱${Number(affStats.total_deposited).toLocaleString()}`} />
+            <StatCard icon="👥" label="Total Referrals"   value={affStats.total} />
+            <StatCard icon="✅" label="Deposited"         value={affStats.deposited}      accent="#00f5a0" sub="on this page" />
+            <StatCard icon="⏳" label="Not Deposited"     value={affStats.not_deposited}  accent="#8888aa" sub="on this page" />
+            <StatCard icon="💰" label="Page Deposited"    value={`₱${Number(affStats.total_deposited).toLocaleString()}`} />
+            <StatCard icon="🏷️" label="Page Commission"   value={`₱${Number(affStats.total_commission).toLocaleString()}`} accent="#a78bfa" />
           </div>
 
           <Card>
-            {/* Toolbar */}
             <div style={{ display: 'flex', gap: '8px', padding: '16px 20px', borderBottom: '1px solid #1e1e2e', flexWrap: 'wrap', alignItems: 'center' }}>
-              {[['all', 'All'], ['deposited', 'Deposited']].map(([key, label]) => (
-                <button key={key} onClick={() => { setAffTab(key); setAffPage(1); }} style={{
+              {[['all', 'All'], ['deposited', 'Deposited Only']].map(([key, label]) => (
+                <button key={key} onClick={() => setAffTab(key)} style={{
                   padding: '7px 16px', borderRadius: '6px', fontSize: '12px', fontWeight: '600',
                   background: affTab === key ? 'rgba(255,215,0,0.1)' : 'transparent',
                   border: affTab === key ? '1px solid rgba(255,215,0,0.3)' : '1px solid #1e1e2e',
                   color: affTab === key ? '#ffd700' : '#555577', cursor: 'pointer',
                 }}>{label}</button>
               ))}
+              <button onClick={() => loadAffiliations(1)} style={{
+                padding: '7px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: '600',
+                background: 'transparent', border: '1px solid #1e1e2e',
+                color: '#8888aa', cursor: 'pointer',
+              }}>↻ Refresh</button>
               <input
                 type="text" placeholder="Search username or email…"
                 value={affSearch} onChange={e => setAffSearch(e.target.value)}
@@ -221,21 +350,29 @@ export default function AdminDashboard() {
               />
             </div>
 
-            {affLoading ? <div className="loading"><div className="spinner" /></div> : (
+            {affError && (
+              <div style={{ padding: '16px 20px', color: '#ff4757', fontSize: '13px' }}>⚠ {affError}</div>
+            )}
+
+            {affLoading ? (
+              <div style={{ padding: '48px', textAlign: 'center', color: '#555577' }}>Loading...</div>
+            ) : (
               <>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                     <thead>
                       <tr style={{ borderBottom: '1px solid #1e1e2e' }}>
-                        {['Referrer', 'Referred User', 'Status', 'Total Deposited', 'Joined'].map(h => (
+                        {['Referrer', 'Referred User', 'Status', 'Deposited', 'Commission', 'Joined'].map(h => (
                           <th key={h} style={{ padding: '12px 20px', textAlign: 'left', color: '#555577', fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {affPaged.length === 0 ? (
-                        <tr><td colSpan="5" style={{ padding: '48px', textAlign: 'center', color: '#555577' }}>No affiliations found</td></tr>
-                      ) : affPaged.map(aff => (
+                      {affiliations.length === 0 ? (
+                        <tr><td colSpan="6" style={{ padding: '48px', textAlign: 'center', color: '#555577' }}>
+                          {affSearch ? `No results for "${affSearch}"` : 'No affiliations found'}
+                        </td></tr>
+                      ) : affiliations.map(aff => (
                         <tr key={aff.id} style={{ borderBottom: '1px solid #1a1a2a' }}
                           onMouseEnter={e => e.currentTarget.style.background = '#0f0f1a'}
                           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
@@ -250,10 +387,13 @@ export default function AdminDashboard() {
                             <div style={{ fontSize: '11px', color: '#555577' }}>{aff.referee_email}</div>
                           </td>
                           <td style={{ padding: '14px 20px' }}>
-                            <StatusBadge ok={aff.has_deposited} yes="Deposited" no="No Deposit" />
+                            <StatusBadge ok={aff.has_deposited} yes="Deposited" no="Registered" />
                           </td>
                           <td style={{ padding: '14px 20px', fontWeight: '700', color: aff.has_deposited ? '#ffd700' : '#555577' }}>
                             ₱{Number(aff.total_deposited || 0).toLocaleString()}
+                          </td>
+                          <td style={{ padding: '14px 20px', fontWeight: '700', color: '#a78bfa' }}>
+                            ₱{Number(aff.commission_earned || 0).toLocaleString()}
                           </td>
                           <td style={{ padding: '14px 20px', fontSize: '12px', color: '#555577' }}>
                             {new Date(aff.created_at).toLocaleDateString()}
@@ -264,7 +404,12 @@ export default function AdminDashboard() {
                   </table>
                 </div>
                 <div style={{ padding: '16px 20px', borderTop: '1px solid #1e1e2e' }}>
-                  <Pagination page={affPage} total={affFiltered.length} perPage={AFF_PER_PAGE} onChange={setAffPage} />
+                  <Pagination
+                    page={affPage}
+                    total={affTotal}
+                    perPage={AFF_PER_PAGE}
+                    onChange={(p) => loadAffiliations(p)}
+                  />
                 </div>
               </>
             )}
