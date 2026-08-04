@@ -64,7 +64,7 @@ export const gameAPI = {
   details: (slug) => api.get(`/games/${slug}`),
   spin: (gameId, betAmount) => api.post(`/games/${gameId}/spin`, { betAmount }),
   freeSpin: (gameId) => api.post(`/games/${gameId}/free-spin`),
-  fishingShoot: (gameId, betAmount) => api.post(`/games/${gameId}/fishing-shoot`, { betAmount }),
+  fishingShoot: (gameId, betAmount, extra = {}) => api.post(`/games/${gameId}/fishing-shoot`, { betAmount, ...extra }),
   play: (gameId, payload) => api.post(`/games/${gameId}/play`, payload),
   history: (gameId) => api.get(`/games/${gameId}/history`),
   jackpotTotal: () => api.get('/games/jackpots/total'),

@@ -106,6 +106,10 @@ io.on('connection', (socket) => {
 trackOnlineUsers(io);
 app.set('io', io);
 
+// Multiplayer fishing rooms (shared fish school + presence)
+const { initMultiplayer } = require('./games/multiplayer');
+initMultiplayer(io);
+
 // ── Lucky draw scheduler ─────────────────────────────────────────────────────
 const { runLuckyDraw } = require('./promotions/routes');
 setInterval(runLuckyDraw, 60 * 60 * 1000);
