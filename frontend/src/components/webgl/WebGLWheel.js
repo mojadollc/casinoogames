@@ -19,7 +19,6 @@ void main() {
   float c = cos(u_angle);
   float s = sin(u_angle);
   vec2 p = vec2(a_pos.x * c - a_pos.y * s, a_pos.x * s + a_pos.y * c);
-  // Convert to clip space (y-up in clip, canvas is y-down — flip y)
   vec2 zeroToOne = (p + u_resolution * 0.5) / u_resolution;
   vec2 clip = zeroToOne * 2.0 - 1.0;
   gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
@@ -73,6 +72,7 @@ export function createWebGLWheel(canvas, segments = []) {
 
   const buf = gl.createBuffer();
   let vertexCount = 0;
+  let currentSegments = segments;
 
   function rebuild(segs) {
     const size = Math.min(canvas.width, canvas.height);
@@ -80,7 +80,6 @@ export function createWebGLWheel(canvas, segments = []) {
     const n = Math.max(segs.length, 1);
     const step = (Math.PI * 2) / n;
     const data = [];
-    // Start from top (-PI/2) going clockwise → positive angle in our rotation sense
     const base = -Math.PI / 2;
 
     for (let i = 0; i < n; i++) {
@@ -91,14 +90,12 @@ export function createWebGLWheel(canvas, segments = []) {
       for (let s = 0; s < slices; s++) {
         const t0 = a0 + (a1 - a0) * (s / slices);
         const t1 = a0 + (a1 - a0) * ((s + 1) / slices);
-        // triangle: center, rim0, rim1
         data.push(0, 0, ...rgb);
         data.push(Math.cos(t0) * r, Math.sin(t0) * r, ...rgb);
         data.push(Math.cos(t1) * r, Math.sin(t1) * r, ...rgb);
       }
     }
 
-    // Hub disc (gold)
     const hubR = r * 0.14;
     const hubCol = hexToRgb('#FFD700');
     const hubSlices = 24;
@@ -115,17 +112,17 @@ export function createWebGLWheel(canvas, segments = []) {
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
   }
 
-  rebuild(segments);
+  rebuild(currentSegments);
 
   function resize(cssSize) {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const px = Math.floor(cssSize * dpr);
     canvas.width = px;
     canvas.height = px;
-    canvas.style.width = `${cssSize}px`;
-    canvas.style.height = `${cssSize}px`;
+    canvas.style.width = cssSize + 'px';
+    canvas.style.height = cssSize + 'px';
     gl.viewport(0, 0, px, px);
-    rebuild(segments);
+    rebuild(currentSegments);
   }
 
   function draw(angleRad) {
@@ -144,8 +141,8 @@ export function createWebGLWheel(canvas, segments = []) {
   }
 
   function setSegments(segs) {
-    segments = segs || [];
-    rebuild(segments);
+    currentSegments = segs || [];
+    rebuild(currentSegments);
   }
 
   function destroy() {

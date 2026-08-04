@@ -14,7 +14,7 @@ varying float v_alpha;
 void main() {
   float t = u_time;
   vec2 p = a_pos + a_vel * t;
-  p.y += 40.0 * t * t; // gravity
+  p.y += 40.0 * t * t;
   float life = max(0.0, 1.0 - t / a_life);
   v_alpha = life;
   v_color = a_color;
@@ -138,8 +138,8 @@ export function createWebGLParticles(canvas) {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.floor(w * dpr);
     canvas.height = Math.floor(h * dpr);
-    canvas.style.width = `${w}px`;
-    canvas.style.height = `${h}px`;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
     gl.viewport(0, 0, canvas.width, canvas.height);
   }
 
