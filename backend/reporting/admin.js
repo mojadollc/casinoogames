@@ -98,48 +98,115 @@ router.get('/dashboard', adminAuth, async (req, res) => {
   }
 });
 
-// Player management
+// Player management — full KYC fields for admin review
 router.get('/players', adminAuth, async (req, res) => {
   try {
-    const { search, page = 1, limit = 20 } = req.query;
+    const { search, page = 1, limit = 20, kyc_status, status } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
-    let sql = `SELECT u.id, u.username, u.email, u.phone, u.vip_level, u.kyc_status, u.status, u.created_at,
-      COALESCE(w.balance, 0) as balance
-      FROM users u LEFT JOIN wallets w ON w.user_id = u.id`;
+    const lim = Math.min(parseInt(limit) || 20, 100);
+
+    // Include KYC columns when available (migration 004)
+    let hasKycCols = true;
+    try {
+      await query('SELECT profile_image, address, kyc_bonus_claimed FROM users LIMIT 1');
+    } catch {
+      hasKycCols = false;
+    }
+
+    const kycSelect = hasKycCols
+      ? ', u.profile_image, u.address, u.kyc_bonus_claimed'
+      : ', NULL as profile_image, NULL as address, NULL as kyc_bonus_claimed';
+
+    let where = 'WHERE u.role_id = 1';
     const params = [];
     if (search) {
-      sql += ' WHERE u.username LIKE ? OR u.email LIKE ?';
-      params.push(`%${search}%`, `%${search}%`);
+      where += ' AND (u.username LIKE ? OR u.email LIKE ? OR u.phone LIKE ? OR u.address LIKE ?)';
+      const q = `%${search}%`;
+      params.push(q, q, q, q);
     }
-    // Exclude admin/superadmin accounts from player list
-    sql += search ? ' AND u.role_id = 1' : ' WHERE u.role_id = 1';
-    sql += ' ORDER BY u.created_at DESC LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), offset);
+    if (kyc_status) {
+      where += ' AND u.kyc_status = ?';
+      params.push(kyc_status);
+    }
+    if (status) {
+      where += ' AND u.status = ?';
+      params.push(status);
+    }
 
-    const countSql = `SELECT COUNT(*) as total FROM users u WHERE u.role_id = 1${search ? ' AND (u.username LIKE ? OR u.email LIKE ?)' : ''}`;
-    const countParams = search ? [`%${search}%`, `%${search}%`] : [];
+    const sql = `SELECT u.id, u.username, u.email, u.phone, u.vip_level, u.kyc_status, u.status, u.created_at
+      ${kycSelect},
+      COALESCE(w.balance, 0) as balance
+      FROM users u LEFT JOIN wallets w ON w.user_id = u.id
+      ${where}
+      ORDER BY u.created_at DESC LIMIT ? OFFSET ?`;
+    params.push(lim, offset);
+
+    const countSql = `SELECT COUNT(*) as total FROM users u ${where}`;
+    const countParams = params.slice(0, params.length - 2);
 
     const [result, countResult] = await Promise.all([
       query(sql, params),
       query(countSql, countParams),
     ]);
 
-    // Try to get extra KYC columns if migration 004 ran
-    let rows = result.rows;
-    try {
-      const extra = await query(
-        `SELECT id, profile_image, address, kyc_bonus_claimed FROM users WHERE role_id = 1${search ? ' AND (username LIKE ? OR email LIKE ?)' : ''} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-        search ? [`%${search}%`, `%${search}%`, parseInt(limit), offset] : [parseInt(limit), offset]
-      );
-      const extraMap = {};
-      extra.rows.forEach(r => { extraMap[r.id] = r; });
-      rows = rows.map(r => ({ ...r, ...extraMap[r.id] }));
-    } catch {} // migration 004 not run yet — skip gracefully
+    const rows = (result.rows || []).map((r) => {
+      let claimed = r.kyc_bonus_claimed;
+      if (typeof claimed === 'string') {
+        try { claimed = JSON.parse(claimed); } catch { claimed = {}; }
+      }
+      return {
+        ...r,
+        kyc_bonus_claimed: claimed || {},
+        // Don't send huge base64 in list — only a flag; full image on detail
+        has_selfie: !!(r.profile_image && r.profile_image !== 'kyc_selfie_verified'),
+        profile_image: r.profile_image && r.profile_image.startsWith('data:image/')
+          ? r.profile_image
+          : (r.profile_image === 'kyc_selfie_verified' ? null : r.profile_image),
+      };
+    });
 
-    res.json({ players: rows, total: parseInt(countResult.rows[0].total) });
+    res.json({ players: rows, total: parseInt(countResult.rows[0]?.total || 0) });
   } catch (err) {
     console.error('Players error:', err.message);
     res.status(500).json({ error: 'Failed to load players' });
+  }
+});
+
+// Single player detail (full KYC + selfie)
+router.get('/players/:id', adminAuth, async (req, res) => {
+  try {
+    let hasKycCols = true;
+    try {
+      await query('SELECT profile_image, address, kyc_bonus_claimed FROM users LIMIT 1');
+    } catch {
+      hasKycCols = false;
+    }
+    const kycSelect = hasKycCols
+      ? ', u.profile_image, u.address, u.kyc_bonus_claimed'
+      : ', NULL as profile_image, NULL as address, NULL as kyc_bonus_claimed';
+
+    const result = await query(
+      `SELECT u.id, u.username, u.email, u.phone, u.vip_level, u.kyc_status, u.status, u.created_at, u.updated_at
+       ${kycSelect},
+       COALESCE(w.balance, 0) as balance, COALESCE(w.bonus_balance, 0) as bonus_balance
+       FROM users u LEFT JOIN wallets w ON w.user_id = u.id
+       WHERE u.id = ? AND u.role_id = 1`,
+      [req.params.id]
+    );
+    if (!result.rows?.length) return res.status(404).json({ error: 'Player not found' });
+    const row = result.rows[0];
+    let claimed = row.kyc_bonus_claimed;
+    if (typeof claimed === 'string') {
+      try { claimed = JSON.parse(claimed); } catch { claimed = {}; }
+    }
+    res.json({
+      ...row,
+      kyc_bonus_claimed: claimed || {},
+      has_selfie: !!(row.profile_image && row.profile_image !== 'kyc_selfie_verified'),
+    });
+  } catch (err) {
+    console.error('Player detail error:', err.message);
+    res.status(500).json({ error: 'Failed to load player' });
   }
 });
 

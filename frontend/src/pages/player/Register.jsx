@@ -5,9 +5,9 @@ import { authAPI } from '../../services/api';
 import { useLogo } from '../../hooks/useLogo';
 
 const KYC_STEPS = [
-  { type: 'selfie',   label: 'Take a Selfie',          bonus: 50, icon: '🤳', desc: 'Take or upload a selfie photo' },
-  { type: 'phone',    label: 'Add Phone Number',        bonus: 30, icon: '📱', desc: 'Verify your mobile number' },
-  { type: 'location', label: 'Enable Current Location', bonus: 20, icon: '📍', desc: 'Allow location access' },
+  { type: 'selfie',   label: 'Take a Selfie',   bonus: 50, icon: '🤳', desc: 'Take or upload a selfie photo' },
+  { type: 'phone',    label: 'Add Phone Number', bonus: 30, icon: '📱', desc: 'Verify your mobile number' },
+  { type: 'location', label: 'Home Address',     bonus: 20, icon: '📍', desc: 'Provide your home address' },
 ];
 
 export default function Register() {
@@ -25,6 +25,7 @@ export default function Register() {
   const [kycMode, setKycMode] = useState(false);
   const [claimed, setClaimed] = useState({});
   const [kycPhone, setKycPhone] = useState('');
+  const [kycAddress, setKycAddress] = useState('');
   const [selfiePreview, setSelfiePreview] = useState(null);
   const [selfieReady, setSelfieReady] = useState(false);
   const [kycLoading, setKycLoading] = useState('');
@@ -64,19 +65,35 @@ export default function Register() {
     try {
       let value = null;
       if (type === 'selfie') {
-        if (!selfieReady) { setKycMsg('Please take a selfie first.'); setKycLoading(''); return; }
-        value = 'verified'; // backend just needs a truthy value, not the image
+        if (!selfieReady || !selfiePreview) {
+          setKycMsg('Please take a selfie first.');
+          setKycLoading('');
+          return;
+        }
+        // Send actual base64 image so admin can review it
+        value = selfiePreview;
       } else if (type === 'phone') {
         if (!kycPhone.trim()) { setKycMsg('Please enter your phone number.'); setKycLoading(''); return; }
         value = kycPhone.trim();
       } else if (type === 'location') {
-        value = await new Promise((resolve, reject) =>
-          navigator.geolocation.getCurrentPosition(
-            (pos) => resolve(`${pos.coords.latitude},${pos.coords.longitude}`),
-            () => reject(new Error('Location denied'))
-          )
-        ).catch(() => null);
-        if (!value) { setKycMsg('Location access was denied.'); setKycLoading(''); return; }
+        const addr = (kycAddress || '').trim();
+        if (!addr) {
+          setKycMsg('Please enter your address.');
+          setKycLoading('');
+          return;
+        }
+        // Optional GPS + required readable address
+        let coords = null;
+        try {
+          coords = await new Promise((resolve, reject) =>
+            navigator.geolocation.getCurrentPosition(
+              (pos) => resolve(`${pos.coords.latitude},${pos.coords.longitude}`),
+              () => resolve(null),
+              { timeout: 8000 }
+            )
+          );
+        } catch { coords = null; }
+        value = coords ? { address: addr, coords } : addr;
       }
       const { data } = await authAPI.kycBonus(type, value);
       setClaimed(data.claimed);
@@ -196,13 +213,13 @@ export default function Register() {
               )}
             </div>
 
-            {/* Location Step */}
+            {/* Address / Location Step */}
             <div className="card" style={{ opacity: claimed.location ? 0.7 : 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: claimed.location ? 0 : '12px' }}>
                 <span style={{ fontSize: '28px' }}>📍</span>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: '700', fontSize: '14px' }}>Enable Current Location</div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Earn ₱20 bonus</div>
+                  <div style={{ fontWeight: '700', fontSize: '14px' }}>Home Address</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Earn ₱20 bonus · Required for KYC</div>
                 </div>
                 {claimed.location
                   ? <span style={{ color: '#00f5a0', fontWeight: '700', fontSize: '13px' }}>✅ +₱20</span>
@@ -210,9 +227,18 @@ export default function Register() {
                 }
               </div>
               {!claimed.location && (
-                <button className="btn btn-primary" style={{ width: '100%', padding: '8px', fontSize: '13px' }} onClick={() => claimBonus('location')} disabled={kycLoading === 'location'}>
-                  {kycLoading === 'location' ? 'Getting location...' : '📍 Allow Location & Claim ₱20'}
-                </button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <textarea
+                    value={kycAddress}
+                    onChange={e => setKycAddress(e.target.value)}
+                    placeholder="Street, Barangay, City, Province"
+                    rows={2}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', background: '#0f0f1a', border: '1px solid #333', color: '#e0e0f0', fontSize: '13px', resize: 'vertical' }}
+                  />
+                  <button className="btn btn-primary" style={{ width: '100%', padding: '8px', fontSize: '13px' }} onClick={() => claimBonus('location')} disabled={kycLoading === 'location'}>
+                    {kycLoading === 'location' ? 'Saving...' : '📍 Save Address & Claim ₱20'}
+                  </button>
+                </div>
               )}
             </div>
           </div>

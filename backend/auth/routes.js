@@ -202,15 +202,38 @@ router.post('/kyc-bonus', authenticate, async (req, res) => {
     const params = [];
 
     if (type === 'selfie') {
-      // value is either a base64 data URL or a URL string — store a flag, not the raw image
+      // Store actual selfie (base64 data URL). Cap size to avoid huge rows (~400KB).
+      if (!value || typeof value !== 'string') {
+        return res.status(400).json({ error: 'Selfie image is required' });
+      }
+      if (value.length > 550000) {
+        return res.status(400).json({ error: 'Selfie image is too large (max ~400KB). Please retake a smaller photo.' });
+      }
+      if (!value.startsWith('data:image/') && value !== 'verified') {
+        return res.status(400).json({ error: 'Invalid selfie image format' });
+      }
       updates.push('profile_image = ?');
-      params.push(value ? 'kyc_selfie_verified' : 'kyc_selfie_verified');
+      // Keep legacy 'verified' fallback but prefer real image
+      params.push(value === 'verified' ? 'kyc_selfie_verified' : value);
     } else if (type === 'phone' && value) {
       updates.push('phone = ?');
       params.push(String(value).trim());
     } else if (type === 'location' && value) {
+      // Prefer readable address text; objects/coords still accepted
+      let addr;
+      if (typeof value === 'object') {
+        addr = value.address
+          ? String(value.address).trim()
+          : JSON.stringify(value);
+        if (value.coords && value.address) {
+          addr = `${String(value.address).trim()} [${value.coords}]`;
+        }
+      } else {
+        addr = String(value).trim();
+      }
+      if (!addr) return res.status(400).json({ error: 'Address is required' });
       updates.push('address = ?');
-      params.push(typeof value === 'object' ? JSON.stringify(value) : String(value));
+      params.push(addr.slice(0, 500));
     }
 
     claimed[type] = true;
