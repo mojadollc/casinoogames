@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { gameAPI, walletAPI } from '../../services/api';
-import SlotSymbol, { SYMBOL_COLORS } from '../../components/slots/SlotSymbols';
+import SlotSymbol, { AnimatedReel, SYMBOL_COLORS } from '../../components/slots/SlotSymbols';
 
 // Game-specific gradient backgrounds (matching game thumbnails)
 const GAME_THEMES = {
@@ -145,24 +145,7 @@ export default function GamePlay() {
     }).catch(() => navigate('/'));
   }, [slug, navigate]);
 
-  useEffect(() => {
-    if (spinning) {
-      const symbols = ['cherry', 'lemon', 'orange', 'seven', 'bell', 'bar', 'wild', 'scatter', 'grape', 'plum'];
-      spinningSymbols.current = setInterval(() => {
-        setDisplayGrid(Array(5).fill(null).map(() =>
-          Array(3).fill(null).map(() => ({
-            id: symbols[Math.floor(Math.random() * symbols.length)],
-            name: ''
-          }))
-        ));
-      }, 80);
-    } else {
-      if (spinningSymbols.current) clearInterval(spinningSymbols.current);
-    }
-    return () => {
-      if (spinningSymbols.current) clearInterval(spinningSymbols.current);
-    };
-  }, [spinning]);
+  // Reel strip animation is handled by <AnimatedReel /> — no random flicker interval needed.
 
   const triggerConfetti = () => {
     setShowConfetti(true);
@@ -172,16 +155,22 @@ export default function GamePlay() {
   const quickBets = [10, 50, 100, 500, 1000];
 
   const animateReels = async (finalGrid) => {
-    const REEL_DELAY = 250;
-    playSpinSound();
-    setSpinProgress({ 0: true, 1: true, 2: true, 3: true, 4: true });
-    for (let i = 0; i < 5; i++) {
-      await new Promise(r => setTimeout(r, REEL_DELAY));
-      playReelStopSound();
-      setSpinProgress(prev => ({ ...prev, [i]: false }));
-    }
+    // Final symbols known before animation so each reel lands correctly
     setGrid(finalGrid);
     setDisplayGrid(finalGrid);
+    playSpinSound();
+    setSpinProgress({ 0: true, 1: true, 2: true, 3: true, 4: true });
+
+    const BASE = 400;       // first reel keeps spinning this long
+    const STAGGER = 300;    // each next reel spins a bit longer
+    const STOP_ANIM = 800;  // bounce settle time per reel
+
+    for (let i = 0; i < 5; i++) {
+      await new Promise(r => setTimeout(r, i === 0 ? BASE : STAGGER));
+      playReelStopSound();
+      setSpinProgress(prev => ({ ...prev, [i]: false })); // triggers bounce stop
+    }
+    await new Promise(r => setTimeout(r, STOP_ANIM));
   };
 
   const spin = async () => {
@@ -361,101 +350,63 @@ export default function GamePlay() {
         </div>
       </div>
 
-      {/* Slot Machine Frame — premium chrome */}
+      {/* Slot Machine Frame */}
       <div style={{
         position: 'relative',
-        padding: '10px',
-        background: `linear-gradient(145deg, #2a2a3e 0%, #12121c 40%, #1a1a2e 100%)`,
-        borderRadius: '22px',
+        padding: '6px',
+        background: gameTheme.bg,
+        borderRadius: '16px',
         marginBottom: '16px',
-        boxShadow: `0 12px 40px rgba(0,0,0,0.55), 0 0 0 2px ${gameTheme.accent}55, 0 0 28px ${gameTheme.accent}30`,
-        border: '1px solid rgba(255,215,0,0.25)'
+        boxShadow: `0 0 30px ${gameTheme.accent}40`
       }}>
-        {/* Top light bar */}
         <div style={{
-          display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 10
-        }}>
-          {[0,1,2,3,4,5,6].map(i => (
-            <div key={i} style={{
-              width: 10, height: 10, borderRadius: '50%',
-              background: spinning
-                ? `radial-gradient(circle, #fff 0%, ${gameTheme.accent} 70%)`
-                : `radial-gradient(circle, ${gameTheme.accent} 0%, #333 80%)`,
-              boxShadow: spinning ? `0 0 10px ${gameTheme.accent}` : 'none',
-              animation: spinning ? `slotLightBlink 0.4s ease ${i * 0.07}s infinite` : 'none'
-            }} />
-          ))}
-        </div>
-
-        <div style={{
-          padding: '4px',
-          background: `linear-gradient(180deg, ${gameTheme.accent} 0%, #FFD700 40%, ${gameTheme.accent} 100%)`,
-          borderRadius: '16px',
-          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.35)'
+          padding: '3px',
+          background: '#0D0D1A',
+          borderRadius: '13px'
         }}>
           <div style={{
-            padding: '14px 10px',
-            background: 'linear-gradient(180deg, #0a0a14 0%, #141428 50%, #0a0a14 100%)',
-            borderRadius: '13px',
-            position: 'relative',
-            boxShadow: 'inset 0 0 30px rgba(0,0,0,0.8)'
+            padding: '16px 8px',
+            background: 'linear-gradient(180deg, #0D0D1A 0%, #1A1A2E 50%, #0D0D1A 100%)',
+            borderRadius: '10px',
+            position: 'relative'
           }}>
-            {/* Paylines */}
-            {[33, 50, 67].map((top, i) => (
-              <div key={i} style={{
-                position: 'absolute',
-                top: `${top}%`,
-                left: 6,
-                right: 6,
-                height: i === 1 ? 2 : 1,
-                background: i === 1
-                  ? 'linear-gradient(90deg, transparent, rgba(255,215,0,0.75), transparent)'
-                  : 'linear-gradient(90deg, transparent, rgba(255,215,0,0.25), transparent)',
-                transform: 'translateY(-50%)',
-                zIndex: 1,
-                pointerEvents: 'none'
-              }} />
-            ))}
+            {/* Payline indicator */}
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '8px',
+              right: '8px',
+              height: '2px',
+              background: 'linear-gradient(90deg, transparent, rgba(255, 215, 0, 0.5), transparent)',
+              transform: 'translateY(-50%)',
+              zIndex: 1
+            }} />
 
-            {/* Reels */}
+            {/* Reels — animated strip scroll */}
             <div style={{
               display: 'flex',
               justifyContent: 'center',
-              gap: '8px',
+              gap: '10px',
               position: 'relative',
-              zIndex: 2
+              zIndex: 2,
+              padding: '4px 0'
             }}>
-              {displayGrid && displayGrid.map((col, ci) => (
-                <div key={ci} style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '6px',
-                  padding: '8px 5px',
-                  background: 'linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(20,20,40,0.4) 50%, rgba(0,0,0,0.55) 100%)',
-                  borderRadius: '12px',
-                  border: `1px solid ${spinProgress[ci] ? gameTheme.accent + '88' : 'rgba(255,215,0,0.2)'}`,
-                  boxShadow: spinProgress[ci]
-                    ? `inset 0 0 16px ${gameTheme.accent}40, 0 0 8px ${gameTheme.accent}30`
-                    : 'inset 0 0 12px rgba(0,0,0,0.6)',
-                  transition: 'border 0.2s, box-shadow 0.2s'
-                }}>
-                  {col.map((sym, ri) => {
-                    const isSpinning = spinProgress[ci];
-                    const isWinning = winningSymbols.includes(`${ci}-${ri}`) && !isSpinning;
-
-                    return (
-                      <div key={`${ci}-${ri}`} style={{ width: 58, height: 58 }}>
-                        <SlotSymbol
-                          id={sym?.id || 'cherry'}
-                          winning={isWinning}
-                          spinning={isSpinning}
-                          size={58}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
+              {displayGrid && displayGrid.map((col, ci) => {
+                const winningRows = [0, 1, 2].filter(ri =>
+                  winningSymbols.includes(`${ci}-${ri}`) && !spinProgress[ci]
+                );
+                return (
+                  <AnimatedReel
+                    key={ci}
+                    finalSymbols={col}
+                    spinning={!!spinProgress[ci]}
+                    cellSize={58}
+                    gap={6}
+                    winningRows={winningRows}
+                    accent={gameTheme.accent}
+                  />
+                );
+              })}
             </div>
           </div>
         </div>
@@ -714,18 +665,16 @@ export default function GamePlay() {
 
       {/* Styles */}
       <style>{`
-        @keyframes slotReelBlur {
-          0% { filter: blur(0px); transform: translateY(-6px); opacity: 0.55; }
-          50% { filter: blur(1px); transform: translateY(0); opacity: 1; }
-          100% { filter: blur(0px); transform: translateY(6px); opacity: 0.55; }
+        @keyframes reelStripSpin {
+          0%   { transform: translateY(0); }
+          100% { transform: translateY(-192px); }
+        }
+        .reel-strip-spin {
+          animation: reelStripSpin 0.12s linear infinite;
         }
         @keyframes slotWinPulse {
           0%, 100% { transform: scale(1); }
-          50% { transform: scale(1.1); }
-        }
-        @keyframes slotLightBlink {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.35; transform: scale(0.85); }
+          50% { transform: scale(1.08); }
         }
         @keyframes symbolSpin {
           0% { transform: translateY(-10px); opacity: 0.3; }
