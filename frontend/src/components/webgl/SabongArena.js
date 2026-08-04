@@ -104,22 +104,22 @@ function createParticles(canvas) {
 }
 
 /** Draw a detailed rooster on 2D context at (x,y), facing dir (1 right, -1 left) */
-function drawRooster(ctx, x, y, dir, color, phase, pose) {
+function drawRooster(ctx, x, y, dir, color, phase, pose, scale = 1.35) {
   // pose: idle | walk | attack | hurt | win | lose
   ctx.save();
   ctx.translate(x, y);
-  ctx.scale(dir, 1);
+  ctx.scale(dir * scale, scale);
 
   const t = phase;
   let bodyY = 0, bodyRot = 0, neckRot = 0, legL = 0, legR = 0, wing = 0;
 
   if (pose === 'idle' || pose === 'walk') {
-    bodyY = Math.sin(t * 6) * 2;
-    legL = Math.sin(t * 8) * (pose === 'walk' ? 0.35 : 0.08);
-    legR = Math.sin(t * 8 + Math.PI) * (pose === 'walk' ? 0.35 : 0.08);
+    bodyY = Math.sin(t * 6) * 4;
+    legL = Math.sin(t * 8) * (pose === 'walk' ? 0.45 : 0.15);
+    legR = Math.sin(t * 8 + Math.PI) * (pose === 'walk' ? 0.45 : 0.15);
     wing = Math.sin(t * 5) * 0.08;
   } else if (pose === 'attack') {
-    bodyRot = -0.35; neckRot = -0.5; bodyY = -8;
+    bodyRot = -0.45; neckRot = -0.65; bodyY = -14;
     wing = 0.6;
   } else if (pose === 'hurt') {
     bodyRot = 0.25; neckRot = 0.3; bodyY = 4;
