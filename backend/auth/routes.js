@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const speakeasy = require('speakeasy');
 const qrcode = require('qrcode');
 const { query } = require('../config/database');
-const { authenticate, authLimiter } = require('../middleware/auth');
+const { authenticate, authLimiter, refreshLimiter } = require('../middleware/auth');
 const { body, validationResult } = require('express-validator');
 const { v4: uuidv4 } = require('uuid');
 const { createAffiliation } = require('../affiliation/routes');
@@ -121,7 +121,7 @@ router.post('/login', authLimiter, [
 });
 
 // Refresh token
-router.post('/refresh', authLimiter, async (req, res) => {
+router.post('/refresh', refreshLimiter, async (req, res) => {
   const { refreshToken } = req.body;
   if (!refreshToken) return res.status(400).json({ error: 'refreshToken is required' });
   try {

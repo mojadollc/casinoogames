@@ -13,17 +13,39 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   async (err) => {
-    if (err.response?.status === 401 && !err.config._retry) {
-      err.config._retry = true;
+    const status = err.response?.status;
+    const cfg = err.config || {};
+
+    // Rate limit — never log the user out; optional short retry
+    if (status === 429) {
+      const retryAfter = Number(err.response?.data?.retryAfter || err.response?.headers?.['retry-after'] || 2);
+      if (!cfg._rateRetry && retryAfter <= 5) {
+        cfg._rateRetry = true;
+        await new Promise((r) => setTimeout(r, retryAfter * 1000));
+        return api(cfg);
+      }
+      // Surface a clean error for UI (games keep running)
+      err.message = err.response?.data?.error || 'Too many requests — please wait a moment.';
+      return Promise.reject(err);
+    }
+
+    // Auth refresh — only logout on real auth failure, not network/429
+    if (status === 401 && !cfg._retry) {
+      cfg._retry = true;
       try {
         const refreshToken = localStorage.getItem('refreshToken');
         if (!refreshToken) throw new Error('No refresh token');
         const { data } = await axios.post(`${API_URL}/auth/refresh`, { refreshToken });
         localStorage.setItem('token', data.token);
-        err.config.headers.Authorization = `Bearer ${data.token}`;
-        return api(err.config);
-      } catch {
-        // Clear everything and redirect to login
+        cfg.headers = cfg.headers || {};
+        cfg.headers.Authorization = `Bearer ${data.token}`;
+        return api(cfg);
+      } catch (refreshErr) {
+        const rs = refreshErr.response?.status;
+        // Do not wipe session on rate-limit or transient errors
+        if (rs === 429 || !rs) {
+          return Promise.reject(refreshErr);
+        }
         localStorage.removeItem('token');
         localStorage.removeItem('refreshToken');
         localStorage.removeItem('cached_user');

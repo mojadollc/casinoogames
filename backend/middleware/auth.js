@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { query } = require('../config/database');
+const rateLimiter = require('express-rate-limit');
 
 // ── Authenticate ──────────────────────────────────────────────────────────────
 const authenticate = async (req, res, next) => {
@@ -38,33 +39,108 @@ const isAdmin = (req, res, next) => {
   next();
 };
 
-// ── Rate limiters ─────────────────────────────────────────────────────────────
-// IMPORTANT: app must have `trust proxy 1` set so req.ip is the real client IP.
-// keyGenerator reads X-Forwarded-For directly as a safety fallback.
-const rateLimiter = require('express-rate-limit');
-
+// ── Rate limit helpers ────────────────────────────────────────────────────────
 const realIp = (req) =>
   req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || '0.0.0.0';
 
-// General API — 300 req / 15 min per IP
+// Prefer per-user bucket when JWT is present (avoids whole café/NAT sharing one limit)
+const clientKey = (req) => {
+  try {
+    const header = req.headers.authorization;
+    if (header?.startsWith('Bearer ')) {
+      const payload = jwt.decode(header.replace('Bearer ', ''));
+      if (payload?.userId) return `u:${payload.userId}`;
+    }
+  } catch {}
+  return `ip:${realIp(req)}`;
+};
+
+// Global limiter skips health, webhooks, and high-frequency game actions
+const skipGlobal = (req) => {
+  const p = `${req.baseUrl || ''}${req.path || ''}` || req.originalUrl || '';
+  return (
+    p.includes('/health') ||
+    p.includes('/webhooks') ||
+    p.includes('/fishing-shoot') ||
+    p.includes('/spin') ||
+    p.includes('/free-spin') ||
+    p.includes('/play')
+  );
+};
+
+/**
+ * Global API — browsing, wallet, lists.
+ * Raised from 300/15min → 2000/5min per user so games stay usable.
+ */
 const apiLimiter = rateLimiter({
-  windowMs: 15 * 60 * 1000,
-  max: 300,
+  windowMs: 5 * 60 * 1000,
+  max: 2000,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: realIp,
-  skip: (req) => req.path === '/health', // never rate-limit health checks
-  handler: (req, res) => res.status(429).json({ error: 'Too many requests, please try again later.' }),
+  keyGenerator: clientKey,
+  skip: skipGlobal,
+  handler: (req, res) =>
+    res.status(429).json({
+      error: 'Too many requests, please try again later.',
+      code: 'RATE_LIMIT',
+      retryAfter: 15,
+    }),
 });
 
-// Auth endpoints — 50 req / 15 min per IP (login, register, refresh)
+/**
+ * Gameplay hot path — fishing shots / spins / table play.
+ * Allows sustained play (~10 actions/sec burst, thousands per window).
+ */
+const gameLimiter = rateLimiter({
+  windowMs: 5 * 60 * 1000,
+  max: 4000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+  handler: (req, res) =>
+    res.status(429).json({
+      error: 'Slow down a little — too many game actions. Try again in a few seconds.',
+      code: 'GAME_RATE_LIMIT',
+      retryAfter: 3,
+    }),
+});
+
+/** Login / register — stricter, by IP */
 const authLimiter = rateLimiter({
   windowMs: 15 * 60 * 1000,
-  max: 50,
+  max: 100,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: realIp,
-  handler: (req, res) => res.status(429).json({ error: 'Too many attempts, please wait 15 minutes.' }),
+  handler: (req, res) =>
+    res.status(429).json({
+      error: 'Too many attempts, please wait a few minutes.',
+      code: 'AUTH_RATE_LIMIT',
+      retryAfter: 60,
+    }),
 });
 
-module.exports = { authenticate, authorize, isAdmin, apiLimiter, authLimiter };
+/** Token refresh — must stay high so active players are not logged out */
+const refreshLimiter = rateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 400,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+  handler: (req, res) =>
+    res.status(429).json({
+      error: 'Too many token refreshes. Please wait a moment.',
+      code: 'REFRESH_RATE_LIMIT',
+      retryAfter: 15,
+    }),
+});
+
+module.exports = {
+  authenticate,
+  authorize,
+  isAdmin,
+  apiLimiter,
+  gameLimiter,
+  authLimiter,
+  refreshLimiter,
+};

@@ -1,7 +1,7 @@
 const express = require('express');
 const { notifyFishingCatch, notifyGameEvent } = require('./multiplayer');
 const { query, pool } = require('../config/database');
-const { authenticate, isAdmin } = require('../middleware/auth');
+const { authenticate, isAdmin, gameLimiter } = require('../middleware/auth');
 const { debitWallet, creditWallet } = require('../wallet/routes');
 const { GameEngine } = require('../../game-engine/engine');
 
@@ -84,7 +84,7 @@ router.get('/:slug', authenticate, async (req, res) => {
 });
 
 // Spin
-router.post('/:gameId/spin', authenticate, async (req, res) => {
+router.post('/:gameId/spin', authenticate, gameLimiter, async (req, res) => {
   const { betAmount } = req.body;
   const { gameId } = req.params;
 
@@ -233,7 +233,7 @@ router.post('/:gameId/spin', authenticate, async (req, res) => {
 });
 
 // Free spin
-router.post('/:gameId/free-spin', authenticate, async (req, res) => {
+router.post('/:gameId/free-spin', authenticate, gameLimiter, async (req, res) => {
   const { gameId } = req.params;
   try {
     const fs = await query(
@@ -279,7 +279,7 @@ router.post('/:gameId/free-spin', authenticate, async (req, res) => {
 });
 
 // Fishing shoot
-router.post('/:gameId/fishing-shoot', authenticate, async (req, res) => {
+router.post('/:gameId/fishing-shoot', authenticate, gameLimiter, async (req, res) => {
   const { betAmount } = req.body;
   const { gameId } = req.params;
   try {
@@ -365,7 +365,7 @@ router.post('/:gameId/fishing-shoot', authenticate, async (req, res) => {
 
 // ── Generic table / live / card play (server-authoritative RNG) ──────────────
 // Used by Card, Sic Bo, Live games instead of the slot reel engine.
-router.post('/:gameId/play', authenticate, async (req, res) => {
+router.post('/:gameId/play', authenticate, gameLimiter, async (req, res) => {
   const { gameId } = req.params;
   const { betAmount, bets, side } = req.body; // bets = sicbo map, side = optional card side bet
 
