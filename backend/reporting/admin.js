@@ -98,14 +98,14 @@ router.get('/dashboard', adminAuth, async (req, res) => {
   }
 });
 
-// Player management — full KYC fields for admin review
+// Player management — show ALL non-admin users (not only role_id = 1)
 router.get('/players', adminAuth, async (req, res) => {
   try {
     const { search, page = 1, limit = 20, kyc_status, status } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(limit);
-    const lim = Math.min(parseInt(limit) || 20, 100);
+    const offset = Math.max(0, (parseInt(page, 10) || 1) - 1) * (parseInt(limit, 10) || 20);
+    const lim = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
 
-    // Include KYC + geocode columns when available
+    // Detect optional columns (migrations 004 / 008)
     let hasKycCols = true;
     let hasGeoCols = true;
     try {
@@ -126,12 +126,26 @@ router.get('/players', adminAuth, async (req, res) => {
       ? ', u.latitude, u.longitude, u.geocoded_address'
       : ', NULL as latitude, NULL as longitude, NULL as geocoded_address';
 
-    let where = 'WHERE u.role_id = 1';
+    // Exclude admin / superadmin by role name (works even if role ids differ)
+    // Also include users with NULL role_id or unknown roles so no player is hidden
+    let where = `WHERE (
+      u.role_id IS NULL
+      OR u.role_id NOT IN (SELECT id FROM roles WHERE name IN ('admin', 'superadmin'))
+      OR NOT EXISTS (SELECT 1 FROM roles r WHERE r.id = u.role_id AND r.name IN ('admin', 'superadmin'))
+    )`;
     const params = [];
-    if (search) {
-      where += ' AND (u.username LIKE ? OR u.email LIKE ? OR u.phone LIKE ? OR u.address LIKE ?)';
-      const q = `%${search}%`;
-      params.push(q, q, q, q);
+
+    const term = (search || '').trim();
+    if (term) {
+      if (hasKycCols) {
+        where += ' AND (u.username LIKE ? OR u.email LIKE ? OR IFNULL(u.phone,\'\') LIKE ? OR IFNULL(u.address,\'\') LIKE ?)';
+        const q = `%${term}%`;
+        params.push(q, q, q, q);
+      } else {
+        where += ' AND (u.username LIKE ? OR u.email LIKE ? OR IFNULL(u.phone,\'\') LIKE ?)';
+        const q = `%${term}%`;
+        params.push(q, q, q);
+      }
     }
     if (kyc_status) {
       where += ' AND u.kyc_status = ?';
@@ -142,21 +156,47 @@ router.get('/players', adminAuth, async (req, res) => {
       params.push(status);
     }
 
-    const sql = `SELECT u.id, u.username, u.email, u.phone, u.vip_level, u.kyc_status, u.status, u.created_at
-      ${kycSelect}${geoSelect},
+    const sql = `SELECT u.id, u.username, u.email, u.phone, u.vip_level, u.kyc_status, u.status, u.created_at,
+      u.role_id ${kycSelect}${geoSelect},
       COALESCE(w.balance, 0) as balance
-      FROM users u LEFT JOIN wallets w ON w.user_id = u.id
+      FROM users u
+      LEFT JOIN wallets w ON w.user_id = u.id
       ${where}
-      ORDER BY u.created_at DESC LIMIT ? OFFSET ?`;
-    params.push(lim, offset);
+      ORDER BY u.created_at DESC
+      LIMIT ${lim} OFFSET ${offset}`;
 
     const countSql = `SELECT COUNT(*) as total FROM users u ${where}`;
-    const countParams = params.slice(0, params.length - 2);
 
-    const [result, countResult] = await Promise.all([
-      query(sql, params),
-      query(countSql, countParams),
-    ]);
+    let result;
+    let countResult;
+    try {
+      [result, countResult] = await Promise.all([
+        query(sql, params),
+        query(countSql, params),
+      ]);
+    } catch (primaryErr) {
+      // Fallback: simplest query so the panel never stays empty
+      console.error('Players primary query failed, using fallback:', primaryErr.message);
+      const fallbackSql = `SELECT u.id, u.username, u.email, u.phone, u.vip_level, u.kyc_status, u.status, u.created_at,
+        u.role_id, NULL as profile_image, NULL as address, NULL as kyc_bonus_claimed,
+        NULL as latitude, NULL as longitude, NULL as geocoded_address,
+        COALESCE(w.balance, 0) as balance
+        FROM users u
+        LEFT JOIN wallets w ON w.user_id = u.id
+        WHERE u.role_id IS NULL OR u.role_id <= 1 OR u.role_id NOT IN (
+          SELECT id FROM roles WHERE name IN ('admin', 'superadmin')
+        )
+        ORDER BY u.created_at DESC
+        LIMIT ${lim} OFFSET ${offset}`;
+      const fallbackCount = `SELECT COUNT(*) as total FROM users u
+        WHERE u.role_id IS NULL OR u.role_id <= 1 OR u.role_id NOT IN (
+          SELECT id FROM roles WHERE name IN ('admin', 'superadmin')
+        )`;
+      [result, countResult] = await Promise.all([
+        query(fallbackSql, []),
+        query(fallbackCount, []),
+      ]);
+    }
 
     const rows = (result.rows || []).map((r) => {
       let claimed = r.kyc_bonus_claimed;
@@ -165,23 +205,24 @@ router.get('/players', adminAuth, async (req, res) => {
       }
       const lat = r.latitude != null ? parseFloat(r.latitude) : null;
       const lng = r.longitude != null ? parseFloat(r.longitude) : null;
+      const img = r.profile_image;
       return {
         ...r,
         latitude: lat,
         longitude: lng,
         maps_url: (lat != null && lng != null) ? `https://www.google.com/maps?q=${lat},${lng}` : null,
         kyc_bonus_claimed: claimed || {},
-        has_selfie: !!(r.profile_image && r.profile_image !== 'kyc_selfie_verified'),
-        profile_image: r.profile_image && r.profile_image.startsWith('data:image/')
-          ? r.profile_image
-          : (r.profile_image === 'kyc_selfie_verified' ? null : r.profile_image),
+        has_selfie: !!(img && img !== 'kyc_selfie_verified'),
+        profile_image: img && String(img).startsWith('data:image/')
+          ? img
+          : (img === 'kyc_selfie_verified' ? null : img),
       };
     });
 
-    res.json({ players: rows, total: parseInt(countResult.rows[0]?.total || 0) });
+    res.json({ players: rows, total: parseInt(countResult.rows[0]?.total || 0, 10) });
   } catch (err) {
-    console.error('Players error:', err.message);
-    res.status(500).json({ error: 'Failed to load players' });
+    console.error('Players error:', err.message, err.stack);
+    res.status(500).json({ error: 'Failed to load players', detail: err.message });
   }
 });
 
@@ -212,7 +253,11 @@ router.get('/players/:id', adminAuth, async (req, res) => {
        ${kycSelect}${geoSelect},
        COALESCE(w.balance, 0) as balance, COALESCE(w.bonus_balance, 0) as bonus_balance
        FROM users u LEFT JOIN wallets w ON w.user_id = u.id
-       WHERE u.id = ? AND u.role_id = 1`,
+       WHERE u.id = ?
+        AND (
+          u.role_id IS NULL
+          OR u.role_id NOT IN (SELECT id FROM roles WHERE name IN ('admin', 'superadmin'))
+        )`,
       [req.params.id]
     );
     if (!result.rows?.length) return res.status(404).json({ error: 'Player not found' });
@@ -245,7 +290,11 @@ router.post('/players/:id/geocode', adminAuth, async (req, res) => {
     try { await query('ALTER TABLE users ADD COLUMN longitude DECIMAL(10,7) NULL'); } catch {}
     try { await query('ALTER TABLE users ADD COLUMN geocoded_address VARCHAR(500) NULL'); } catch {}
 
-    const result = await query('SELECT id, address FROM users WHERE id = ? AND role_id = 1', [req.params.id]);
+    const result = await query(
+      `SELECT id, address FROM users WHERE id = ?
+       AND (role_id IS NULL OR role_id NOT IN (SELECT id FROM roles WHERE name IN ('admin', 'superadmin')))`,
+      [req.params.id]
+    );
     if (!result.rows?.length) return res.status(404).json({ error: 'Player not found' });
     const address = req.body?.address || result.rows[0].address;
     if (!address) return res.status(400).json({ error: 'No address to geocode' });

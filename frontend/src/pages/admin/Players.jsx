@@ -295,7 +295,13 @@ export default function AdminPlayers() {
         }
         setPage(p);
       })
-      .catch(() => { setPlayers([]); setTotal(0); })
+      .catch((err) => {
+        console.error('Load players failed:', err?.response?.data || err.message);
+        setPlayers([]);
+        setTotal(0);
+        setToast('✗ Failed to load players — check admin login / API');
+        setTimeout(() => setToast(''), 4000);
+      })
       .finally(() => setLoading(false));
   };
 
