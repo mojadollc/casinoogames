@@ -12,6 +12,7 @@ import SlotGame from './pages/player/SlotGame';
 import SicBoGame from './pages/player/SicBoGame';
 import LiveGame from './pages/player/LiveGame';
 import FishingGame from './pages/player/FishingGame';
+import CockFightGame from './pages/player/CockFightGame';
 import Wallet from './pages/player/Wallet';
 import Promotions from './pages/player/Promotions';
 import Profile from './pages/player/Profile';
@@ -33,6 +34,9 @@ const SICBO_GAMES = ['sic-bo', 'sicbo', 'sic-bo-game'];
 // Fishing games
 const FISHING_GAMES = ['fishing-god', 'ocean-king', 'fishing', 'fishing-game', 'golden-dragon', 'fish-hunter'];
 
+// Cockfighting / Sabong
+const COCKFIGHT_GAMES = ['sabong', 'cockfight', 'meron-wala', 'cock-fighting', 'cockfighting'];
+
 // Live / show games — use LiveGame (wheel/segment UI)
 const LIVE_GAMES = ['monopoly-live', 'crazy-time', 'lightning-roulette', 'dream-catcher'];
 
@@ -49,6 +53,9 @@ const GameRouter = () => {
   }
   if (SICBO_GAMES.some(game => lowerSlug.includes(game))) {
     return <SicBoGame />;
+  }
+  if (COCKFIGHT_GAMES.some(game => lowerSlug.includes(game))) {
+    return <CockFightGame />;
   }
   if (FISHING_GAMES.some(game => lowerSlug.includes(game))) {
     return <FishingGame />;

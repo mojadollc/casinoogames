@@ -57,6 +57,9 @@ const CasinoIcons = {
       </defs>
     </svg>
   ),
+  cockfight: ({ size = 40 }) => (
+    <span style={{ fontSize: size * 0.7, lineHeight: 1 }} title="Cockfight">🐓</span>
+  ),
   fishing: ({ size = 40 }) => (
     <svg width={size} height={size} viewBox="0 0 64 64" fill="none">
       {/* Water */}
@@ -303,6 +306,7 @@ const CATEGORIES = [
   { id: 'slots',        name: 'Slots',        color: '#FF1493' },
   { id: 'live',         name: 'Live Casino',  color: '#00D9FF' },
   { id: 'fishing',      name: 'Fishing',      color: '#00D9FF' },
+  { id: 'cockfight',    name: 'Cockfight',    color: '#FF6B35' },
   { id: 'card',         name: 'Card Games',   color: '#FF1493' },
   { id: 'table',        name: 'Table Games',  color: '#00D9FF' },
   { id: 'sports',       name: 'Sports',       color: '#00D9FF' },
@@ -316,6 +320,7 @@ const typeToCategory = (type) => {
   const t = type.toLowerCase();
   if (t === 'live') return 'live';
   if (t === 'fishing') return 'fishing';
+  if (t === 'cockfight' || t === 'sabong') return 'cockfight';
   if (t === 'card') return 'card';
   if (t === 'table') return 'table';
   if (t === 'cockfighting' || t === 'cock-fighting') return 'cockfighting';

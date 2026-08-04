@@ -836,4 +836,113 @@ router.get('/:gameId/stats', authenticate, isAdmin, async (req, res) => {
   }
 });
 
+
+// ── Cockfighting / Sabong (Meron vs Wala) ─────────────────────────────────────
+// Real-money bet on MERON | WALA | DRAW. Outcome uses admin win_rate / force_outcome.
+router.post('/:gameId/cockfight', authenticate, gameLimiter, async (req, res) => {
+  const { gameId } = req.params;
+  const betAmount = parseFloat(req.body.betAmount);
+  const side = String(req.body.side || '').toLowerCase(); // meron | wala | draw
+
+  try {
+    if (!Number.isFinite(betAmount) || betAmount <= 0) {
+      return res.status(400).json({ error: 'Invalid bet amount' });
+    }
+    if (!['meron', 'wala', 'draw'].includes(side)) {
+      return res.status(400).json({ error: 'Choose side: meron, wala, or draw' });
+    }
+
+    const game = await query("SELECT * FROM games WHERE id = ? AND status = 'active'", [gameId]);
+    if (!game.rows[0]) return res.status(404).json({ error: 'Game not found' });
+    const g = game.rows[0];
+    if (betAmount < Number(g.min_bet) || betAmount > Number(g.max_bet)) {
+      return res.status(400).json({ error: `Bet must be between ${g.min_bet} and ${g.max_bet}` });
+    }
+
+    const controls = await getGameControls(gameId);
+    const { SecureRNG } = require('../../game-engine/engine');
+    const rng = new SecureRNG();
+
+    // Odds (decimal, includes stake return style for straight bets)
+    const ODDS = { meron: 1.95, wala: 1.95, draw: 8 };
+
+    // Determine fight winner under admin controls
+    // force_outcome: win = player's side wins, loss = player's side loses, null = RNG
+    let winner; // meron | wala | draw
+    const force = controls.force_outcome;
+    if (force === 'win') {
+      winner = side === 'draw' ? 'draw' : side;
+    } else if (force === 'loss') {
+      if (side === 'meron') winner = 'wala';
+      else if (side === 'wala') winner = 'meron';
+      else winner = rng.generate(1, 2) === 1 ? 'meron' : 'wala';
+    } else {
+      const roll = rng.generate(1, 100);
+      // Small natural draw chance (~4%) unless player bet draw (then use win_rate)
+      if (side === 'draw') {
+        winner = roll <= controls.win_rate ? 'draw' : (rng.generate(1, 2) === 1 ? 'meron' : 'wala');
+      } else {
+        const drawRoll = rng.generate(1, 100);
+        if (drawRoll <= 4) {
+          winner = 'draw';
+        } else if (roll <= controls.win_rate) {
+          winner = side; // player wins
+        } else {
+          winner = side === 'meron' ? 'wala' : 'meron';
+        }
+      }
+    }
+
+    const playerWon = winner === side;
+    let totalWin = 0;
+    if (playerWon) {
+      totalWin = parseFloat((betAmount * ODDS[side]).toFixed(2));
+    } else if (winner === 'draw' && side !== 'draw') {
+      // Straight bets push on draw (refund stake)
+      totalWin = betAmount;
+    }
+
+    // Max payout cap (multiplier)
+    if (totalWin > 0 && controls.max_payout > 0) {
+      const mult = totalWin / betAmount;
+      if (mult > controls.max_payout) {
+        totalWin = parseFloat((betAmount * controls.max_payout).toFixed(2));
+      }
+    }
+
+    if (!controls.dry_run) {
+      await debitWallet(req.user.id, betAmount, 'bet', `Cockfight ${side} on ${g.name}`, gameId);
+      if (totalWin > 0) {
+        await creditWallet(req.user.id, totalWin, 'win', `Cockfight ${winner} on ${g.name}`, gameId);
+      }
+    }
+
+    await query(
+      'INSERT INTO game_rounds (id, game_id, user_id, bet_amount, win_amount, result, rng_seed) VALUES (UUID(),?,?,?,?,?,?)',
+      [gameId, req.user.id, betAmount, totalWin, JSON.stringify({
+        side, winner, playerWon, odds: ODDS[side], dry_run: !!controls.dry_run, force
+      }), 'cockfight']
+    );
+
+    const wallet = await query('SELECT balance FROM wallets WHERE user_id = ?', [req.user.id]);
+    res.json({
+      side,
+      winner,
+      playerWon: playerWon || (winner === 'draw' && side !== 'draw'), // push counts as non-loss UI
+      isPush: winner === 'draw' && side !== 'draw',
+      totalWin,
+      odds: ODDS[side],
+      balance: wallet.rows[0]?.balance ?? 0,
+      dryRun: !!controls.dry_run,
+      // Fight flavor for animation
+      rounds: rng.generate(3, 6),
+      critical: playerWon && totalWin >= betAmount * 3,
+    });
+  } catch (err) {
+    console.error('Cockfight error:', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+
 module.exports = router;

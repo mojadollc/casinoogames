@@ -50,6 +50,11 @@ const GAMES = [
   { name: 'Golden Dragon',      slug: 'golden-dragon',      type: 'fishing', rtp: 92.00, min_bet: 1, max_bet: 500   },
   { name: 'Fish Hunter',        slug: 'fish-hunter',        type: 'fishing', rtp: 92.00, min_bet: 1, max_bet: 500   },
 
+  // Cockfighting / Sabong
+  { name: 'Sabong Arena',       slug: 'sabong-arena',       type: 'cockfight', rtp: 92.00, min_bet: 20,  max_bet: 20000 },
+  { name: 'Cockfight Classic',  slug: 'cockfight-classic',  type: 'cockfight', rtp: 92.00, min_bet: 10,  max_bet: 10000 },
+  { name: 'Meron Wala Live',    slug: 'meron-wala-live',    type: 'cockfight', rtp: 92.00, min_bet: 50,  max_bet: 50000 },
+
   // Table Games
   { name: 'European Roulette',  slug: 'european-roulette',  type: 'table', rtp: 92.00, min_bet: 10,  max_bet: 5000  },
   { name: 'American Roulette',  slug: 'american-roulette',  type: 'table', rtp: 92.00, min_bet: 10,  max_bet: 5000  },
