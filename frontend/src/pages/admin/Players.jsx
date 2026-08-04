@@ -401,11 +401,17 @@ export default function AdminPlayers() {
                           </div>
                         </div>
                       </td>
-                      <td style={{ padding: '14px 20px', color: '#e0e0f0', fontSize: '12px' }}>
+                      <td style={{ padding: '14px 20px', color: '#e0e0f0', fontSize: '12px', whiteSpace: 'nowrap' }}>
                         {p.phone || <span style={{ color: '#333355' }}>—</span>}
                       </td>
-                      <td style={{ padding: '14px 20px', color: '#8888aa', fontSize: '12px', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {p.address || <span style={{ color: '#333355' }}>—</span>}
+                      <td style={{ padding: '14px 20px', color: '#e0e0f0', fontSize: '12px', minWidth: '180px', maxWidth: '280px' }}>
+                        {p.address ? (
+                          <span title={p.address} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            📍 {p.address}
+                          </span>
+                        ) : (
+                          <span style={{ color: '#333355' }}>—</span>
+                        )}
                       </td>
                       <td style={{ padding: '14px 20px', fontWeight: '700', color: '#ffd700' }}>
                         ₱{Number(p.balance || 0).toLocaleString()}
