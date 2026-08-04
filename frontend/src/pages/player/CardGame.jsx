@@ -1,683 +1,447 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { gameAPI, walletAPI } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
+import { getSocket } from '../../hooks/useSocket';
 
-// Card suit symbols
 const SUITS = {
-  hearts: { symbol: '♥', color: '#ff2d75' },
-  diamonds: { symbol: '♦', color: '#ff2d75' },
-  clubs: { symbol: '♣', color: '#1a1a2e' },
-  spades: { symbol: '♠', color: '#1a1a2e' }
+  hearts: { symbol: '♥', color: '#e74c3c' },
+  diamonds: { symbol: '♦', color: '#e74c3c' },
+  clubs: { symbol: '♣', color: '#2c3e50' },
+  spades: { symbol: '♠', color: '#2c3e50' },
 };
 
-const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-
-// Generate a random card
-const randomCard = () => {
-  const suit = Object.keys(SUITS)[Math.floor(Math.random() * 4)];
-  const rank = RANKS[Math.floor(Math.random() * 13)];
-  return { suit, rank, ...SUITS[suit] };
-};
-
-// Playing Card Component
-const Card = ({ card, faceDown = false, dealing = false, winning = false }) => {
-  if (faceDown) {
+const Card = ({ card, faceDown = false, small = false }) => {
+  if (!card || faceDown || card.faceDown) {
     return (
       <div style={{
-        width: '80px',
-        height: '112px',
-        background: 'linear-gradient(135deg, #1a0a2e 0%, #2d1b4e 50%, #1a0a2e 100%)',
-        borderRadius: '10px',
-        border: '2px solid #ffd700',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        boxShadow: '0 4px 15px rgba(0, 0, 0, 0.4)',
-        position: 'relative',
-        overflow: 'hidden'
-      }}>
-        <div style={{
-          position: 'absolute',
-          inset: '4px',
-          background: 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255, 215, 0, 0.1) 5px, rgba(255, 215, 0, 0.1) 10px)',
-          borderRadius: '6px'
-        }} />
-        <span style={{ fontSize: '28px', zIndex: 1 }}>🐉</span>
-      </div>
+        width: small ? 36 : 52, height: small ? 50 : 72, borderRadius: 6,
+        background: 'linear-gradient(135deg, #1a237e, #0d47a1)',
+        border: '1px solid #3949ab', boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
+      }} />
     );
   }
-
+  const meta = SUITS[card.suit] || SUITS.spades;
   return (
     <div style={{
-      width: '80px',
-      height: '112px',
-      background: 'linear-gradient(145deg, #ffffff 0%, #f0f0f0 100%)',
-      borderRadius: '10px',
-      border: winning ? '3px solid #ffd700' : '2px solid rgba(255, 215, 0, 0.3)',
-      display: 'flex',
-      flexDirection: 'column',
-      justifyContent: 'space-between',
-      padding: '6px',
-      boxShadow: winning 
-        ? '0 0 30px rgba(255, 215, 0, 0.8)' 
-        : '0 4px 15px rgba(0, 0, 0, 0.3)',
-      position: 'relative',
-      animation: dealing ? 'dealCard 0.3s ease-out' : 'none',
-      transform: winning ? 'scale(1.05)' : 'scale(1)',
-      transition: 'all 0.3s ease'
+      width: small ? 36 : 52, height: small ? 50 : 72, borderRadius: 6,
+      background: '#fff', border: '1px solid #ddd',
+      boxShadow: '0 2px 6px rgba(0,0,0,0.35)',
+      display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+      padding: 4, color: meta.color, fontWeight: 800, fontSize: small ? 10 : 12,
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-        <span style={{ fontSize: '18px', fontWeight: '900', color: card.color }}>{card.rank}</span>
-        <span style={{ fontSize: '16px', color: card.color }}>{card.symbol}</span>
-      </div>
-      <div style={{ 
-        fontSize: '36px', 
-        textAlign: 'center', 
-        color: card.color,
-        textShadow: card.color === '#ff2d75' ? '0 0 10px rgba(255, 45, 117, 0.3)' : 'none'
-      }}>
-        {card.symbol}
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '2px', transform: 'rotate(180deg)' }}>
-        <span style={{ fontSize: '18px', fontWeight: '900', color: card.color }}>{card.rank}</span>
-        <span style={{ fontSize: '16px', color: card.color }}>{card.symbol}</span>
-      </div>
+      <div>{card.rank}{meta.symbol}</div>
+      <div style={{ textAlign: 'center', fontSize: small ? 14 : 18 }}>{meta.symbol}</div>
+      <div style={{ transform: 'rotate(180deg)' }}>{card.rank}{meta.symbol}</div>
     </div>
   );
 };
 
-// Games that support HIT/STAND (blackjack-style)
-const BLACKJACK_SLUGS = ['blackjack-vip', 'texas-holdem', 'teen-patti', 'andar-bahar'];
+function Hand({ cards, label, value, highlight }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontSize: 11, color: highlight ? '#FFD700' : '#8ab', marginBottom: 4, fontWeight: 700 }}>
+        {label}{value != null ? ` · ${value}` : ''}
+      </div>
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+        {(cards || []).map((c, i) => <Card key={i} card={c} faceDown={c.faceDown} />)}
+        {(!cards || !cards.length) && <span style={{ color: '#567', fontSize: 12 }}>—</span>}
+      </div>
+    </div>
+  );
+}
 
 export default function CardGame() {
   const { slug } = useParams();
   const navigate = useNavigate();
-  
+  const { user } = useAuth();
+  const socketRef = useRef(null);
+
   const [game, setGame] = useState(null);
-  const [bet, setBet] = useState(10);
   const [balance, setBalance] = useState(0);
-  const [dealing, setDealing] = useState(false);
-  const [playerCards, setPlayerCards] = useState([]);
-  const [dealerCards, setDealerCards] = useState([]);
-  const [gameState, setGameState] = useState('betting'); // betting, playing, result
-  const [result, setResult] = useState(null);
-  const [lastWin, setLastWin] = useState(0);
-  const [message, setMessage] = useState('');
-  // Track backend-decided outcome so HIT/STAND resolve correctly
-  const backendOutcomeRef = React.useRef(null);
+  const [view, setView] = useState('lobby'); // lobby | table
+  const [tables, setTables] = useState([]);
+  const [table, setTable] = useState(null);
+  const [bet, setBet] = useState(10);
+  const [side, setSide] = useState('player');
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
-  const isBlackjack = BLACKJACK_SLUGS.some(s => slug?.toLowerCase().includes(s));
-
+  // Load game + balance
   useEffect(() => {
     walletAPI.balance().then(({ data }) => setBalance(Number(data.balance) || 0)).catch(() => {});
     gameAPI.details(slug).then(({ data }) => {
       setGame(data);
-      setBet(Number(data.min_bet));
+      setBet(Number(data.min_bet) || 10);
     }).catch(() => navigate('/'));
   }, [slug, navigate]);
 
-  const calculateHandValue = (cards) => {
-    let value = 0;
-    let aces = 0;
-    
-    cards.forEach(card => {
-      if (card.rank === 'A') {
-        aces++;
-        value += 11;
-      } else if (['K', 'Q', 'J'].includes(card.rank)) {
-        value += 10;
-      } else {
-        value += parseInt(card.rank);
-      }
+  // Socket
+  useEffect(() => {
+    if (!user?.id) return;
+    const s = getSocket();
+    socketRef.current = s;
+
+    const onState = (state) => {
+      setTable(state);
+      setView('table');
+    };
+    const onWallet = (payload) => {
+      if (payload?.balance != null) setBalance(Number(payload.balance));
+    };
+
+    s.on('card:state', onState);
+    s.on('wallet:update', onWallet);
+
+    return () => {
+      s.emit('card:leave');
+      s.off('card:state', onState);
+      s.off('wallet:update', onWallet);
+    };
+  }, [user?.id]);
+
+  const refreshTables = useCallback(() => {
+    if (!game?.id || !socketRef.current) return;
+    socketRef.current.emit('card:list', { gameId: game.id }, (res) => {
+      if (res?.ok) setTables(res.tables || []);
     });
-    
-    while (value > 21 && aces > 0) {
-      value -= 10;
-      aces--;
+  }, [game?.id]);
+
+  useEffect(() => {
+    if (view === 'lobby' && game?.id) {
+      refreshTables();
+      const t = setInterval(refreshTables, 4000);
+      return () => clearInterval(t);
     }
-    
-    return value;
+  }, [view, game?.id, refreshTables]);
+
+  const emit = (event, payload) =>
+    new Promise((resolve) => {
+      const s = socketRef.current;
+      if (!s) return resolve({ ok: false, error: 'Not connected' });
+      s.emit(event, payload, (res) => resolve(res || { ok: false, error: 'No response' }));
+    });
+
+  const createTable = async () => {
+    if (!user || !game) return;
+    setBusy(true); setError('');
+    const res = await emit('card:create', {
+      gameId: game.id,
+      userId: user.id,
+      username: user.username,
+    });
+    setBusy(false);
+    if (!res.ok) setError(res.error || 'Create failed');
+    else if (res.table) { setTable(res.table); setView('table'); }
   };
 
-  const enrichCard = (c) => {
-    if (!c) return randomCard();
-    const suit = c.suit || Object.keys(SUITS)[Math.floor(Math.random() * 4)];
-    const rank = c.rank || RANKS[Math.floor(Math.random() * 13)];
-    return { suit, rank, ...SUITS[suit] };
+  const joinTable = async (tableId) => {
+    if (!user) return;
+    setBusy(true); setError('');
+    const res = await emit('card:join', {
+      tableId,
+      userId: user.id,
+      username: user.username,
+    });
+    setBusy(false);
+    if (!res.ok) setError(res.error || 'Join failed');
+    else if (res.table) { setTable(res.table); setView('table'); }
   };
 
-  const deal = async () => {
-    if (dealing || balance < bet) return;
-    setDealing(true);
-    setResult(null);
-    setMessage('');
-    setLastWin(0);
-    setPlayerCards([]);
-    setDealerCards([]);
-    backendOutcomeRef.current = null;
+  const leaveTable = () => {
+    socketRef.current?.emit('card:leave');
+    setTable(null);
+    setView('lobby');
+    refreshTables();
+  };
 
-    try {
-      // Server-authoritative outcome (win_rate / force_outcome / payout caps)
-      const { data } = await gameAPI.play(game.id, { betAmount: bet });
-      setBalance(data.balance);
-      backendOutcomeRef.current = data;
-
-      const won = data.totalWin > 0 && data.outcome !== 'push';
-      const isPush = data.outcome === 'push';
-
-      // Prefer server hands when provided; otherwise align visuals to outcome
-      let newPlayerCards = Array.isArray(data.playerHand) && data.playerHand.length >= 2
-        ? data.playerHand.map(enrichCard)
-        : [randomCard(), randomCard()];
-      let newDealerCards = Array.isArray(data.dealerHand) && data.dealerHand.length >= 2
-        ? data.dealerHand.map(enrichCard)
-        : [randomCard(), randomCard()];
-
-      if (!data.playerHand) {
-        if (won) {
-          newPlayerCards[1] = getCardForValue(newPlayerCards[0], 19 + Math.floor(Math.random() * 3));
-          newDealerCards[1] = getCardForValue(newDealerCards[0], 14 + Math.floor(Math.random() * 5));
-        } else if (!isPush) {
-          newPlayerCards[1] = getCardForValue(newPlayerCards[0], 14 + Math.floor(Math.random() * 4));
-          newDealerCards[1] = getCardForValue(newDealerCards[0], 18 + Math.floor(Math.random() * 3));
-        }
-      }
-
-      // Animate deal sequence
-      await new Promise(r => setTimeout(r, 200));
-      setPlayerCards([newPlayerCards[0]]);
-      await new Promise(r => setTimeout(r, 300));
-      setPlayerCards([...newPlayerCards]);
-      await new Promise(r => setTimeout(r, 300));
-      setDealerCards([{ ...newDealerCards[0], faceDown: false }]);
-      await new Promise(r => setTimeout(r, 300));
-      setDealerCards([{ ...newDealerCards[0], faceDown: false }, { ...newDealerCards[1], faceDown: true }]);
-
-      if (isBlackjack) {
-        // HIT / STAND UI — final message still follows backendOutcomeRef
-        setDealing(false);
-        setGameState('playing');
-      } else {
-        await new Promise(r => setTimeout(r, 600));
-        setDealerCards(newDealerCards.map(c => ({ ...c, faceDown: false })));
-        setDealing(false);
-        setGameState('result');
-        if (isPush) {
-          setResult('push');
-          setLastWin(data.totalWin || 0);
-          setMessage("🤝 PUSH — It's a tie!");
-        } else if (won) {
-          setResult(data.outcome === 'blackjack' ? 'blackjack' : 'win');
-          setLastWin(data.totalWin);
-          setMessage(`🎉 You WIN! ₱${data.totalWin.toLocaleString()}`);
-        } else {
-          setResult('lose');
-          setMessage('😔 Dealer wins.');
-        }
-      }
-    } catch (err) {
-      setMessage(err.response?.data?.error || 'Deal failed');
-      setDealing(false);
-      setGameState('betting');
+  const placeBet = async () => {
+    if (!table || !user) return;
+    setBusy(true); setError('');
+    const res = await emit('card:bet', {
+      tableId: table.id,
+      userId: user.id,
+      amount: bet,
+      side: table.mode === 'blackjack' ? null : side,
+    });
+    setBusy(false);
+    if (!res.ok) setError(res.error || 'Bet failed');
+    else {
+      if (res.balance != null) setBalance(Number(res.balance));
+      if (res.table) setTable(res.table);
+      setMsg(`Bet ₱${bet} placed`);
+      // Refresh balance from API for accuracy
+      walletAPI.balance().then(({ data }) => setBalance(Number(data.balance) || 0)).catch(() => {});
     }
   };
 
-  // Helper: get a card that contributes to a target hand value
-  const getCardForValue = (existingCard, targetTotal) => {
-    const existingVal = existingCard.rank === 'A' ? 11 : ['K','Q','J'].includes(existingCard.rank) ? 10 : parseInt(existingCard.rank);
-    const needed = targetTotal - existingVal;
-    const clampedNeeded = Math.max(2, Math.min(10, needed));
-    const rank = clampedNeeded === 10 ? ['10','J','Q','K'][Math.floor(Math.random() * 4)] : String(clampedNeeded);
-    const suit = Object.keys(SUITS)[Math.floor(Math.random() * 4)];
-    return { suit, rank, ...SUITS[suit] };
+  const hit = async () => {
+    setBusy(true);
+    const res = await emit('card:hit', { tableId: table.id, userId: user.id });
+    setBusy(false);
+    if (!res.ok) setError(res.error || 'Hit failed');
+    else if (res.table) setTable(res.table);
   };
 
-  const hit = (currentCards) => {
-    const newCard = randomCard();
-    const newCards = [...currentCards, newCard];
-    setPlayerCards(newCards);
-    const value = calculateHandValue(newCards);
-    if (value > 21) {
-      setMessage('💥 BUST! You lose.');
-      setResult('lose');
-      setGameState('result');
-      setDealerCards(prev => prev.map(c => ({ ...c, faceDown: false })));
-    } else if (value === 21) {
-      stand(newCards);
-    }
-    return newCards;
+  const stand = async () => {
+    setBusy(true);
+    const res = await emit('card:stand', { tableId: table.id, userId: user.id });
+    setBusy(false);
+    if (!res.ok) setError(res.error || 'Stand failed');
+    else if (res.table) setTable(res.table);
   };
 
-  const stand = async (currentCards) => {
-    // currentCards passed explicitly to avoid stale closure from playerCards state
-    const finalPlayerCards = currentCards || playerCards;
-    setGameState('result');
-    const revealedDealer = dealerCards.map(c => ({ ...c, faceDown: false }));
-    setDealerCards(revealedDealer);
-    let dealerHand = [...revealedDealer];
-    await new Promise(r => setTimeout(r, 500));
-    while (calculateHandValue(dealerHand) < 17) {
-      await new Promise(r => setTimeout(r, 500));
-      dealerHand = [...dealerHand, randomCard()];
-      setDealerCards([...dealerHand]);
-    }
-    const playerValue = calculateHandValue(finalPlayerCards);
-    const dealerValue = calculateHandValue(dealerHand);
-    const backendWon = backendOutcomeRef.current?.totalWin > 0;
-    await new Promise(r => setTimeout(r, 300));
-    // Visual result must agree with backend outcome to keep wallet consistent
-    if (backendWon) {
-      const winAmt = backendOutcomeRef.current.totalWin;
-      setLastWin(winAmt);
-      if (dealerValue > 21) {
-        setMessage(`🎉 Dealer BUSTS! You WIN! ₱${winAmt.toLocaleString()}`);
-      } else {
-        setMessage(`🎉 You WIN! ₱${winAmt.toLocaleString()}`);
-      }
-      setResult('win');
-    } else {
-      if (playerValue === dealerValue) {
-        setMessage("🤝 PUSH — It's a tie!");
-        setResult('push');
-      } else {
-        setMessage('😔 Dealer wins.');
-        setResult('lose');
-      }
-    }
-  };
+  if (!game || !user) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a1628', color: '#8ab' }}>
+        Loading table…
+      </div>
+    );
+  }
 
-  const newRound = () => {
-    setGameState('betting');
-    setPlayerCards([]);
-    setDealerCards([]);
-    setResult(null);
-    setMessage('');
-    setLastWin(0);
-  };
+  const mySeat = table?.seats?.find(s => String(s.userId) === String(user.id));
+  const isMyTurn = table && String(table.currentTurnUserId) === String(user.id);
+  const canBet = table && (table.phase === 'betting' || table.phase === 'waiting');
+  const sideOptions =
+    table?.mode === 'baccarat' ? ['player', 'banker', 'tie'] :
+    table?.mode === 'dragon_tiger' ? ['dragon', 'tiger', 'tie'] :
+    table?.mode === 'andar_bahar' ? ['andar', 'bahar'] : [];
 
-  if (!game) return <div className="loading"><div className="spinner" /></div>;
+  // ── LOBBY ────────────────────────────────────────────────────────────────
+  if (view === 'lobby') {
+    return (
+      <div style={{
+        minHeight: '100vh', maxWidth: 480, margin: '0 auto',
+        background: 'linear-gradient(180deg, #0a1628, #12243a)', color: '#e8f0ff',
+        fontFamily: 'system-ui, sans-serif', padding: '0 0 24px',
+      }}>
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          padding: '12px 16px', borderBottom: '1px solid #1e3a5f',
+        }}>
+          <Link to="/" style={{ color: '#7ec8ff', textDecoration: 'none', fontWeight: 700 }}>← Lobby</Link>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontWeight: 800, color: '#FFD700' }}>{game.name}</div>
+            <div style={{ fontSize: 11, color: '#6a9' }}>MULTIPLAYER · REAL MONEY</div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 10, color: '#6a9' }}>BALANCE</div>
+            <div style={{ fontWeight: 800, color: '#FFD700' }}>₱{balance.toLocaleString()}</div>
+          </div>
+        </div>
 
-  const playerValue = calculateHandValue(playerCards);
-  const dealerValue = calculateHandValue(dealerCards.filter(c => !c.faceDown));
+        <div style={{ padding: 16 }}>
+          <p style={{ fontSize: 13, color: '#8ab', marginBottom: 16, lineHeight: 1.5 }}>
+            Join a live table. Bets debit your wallet immediately. Wins credit automatically when the hand settles.
+          </p>
 
+          <button type="button" onClick={createTable} disabled={busy || balance < (game.min_bet || 10)}
+            style={{
+              width: '100%', padding: 14, borderRadius: 12, border: 'none', marginBottom: 16,
+              background: 'linear-gradient(135deg, #FFD700, #f0a500)', color: '#1a1200',
+              fontWeight: 900, fontSize: 15, cursor: busy ? 'wait' : 'pointer',
+            }}>
+            + Create Table
+          </button>
+
+          {error && <div style={{ color: '#ff6b6b', fontSize: 13, marginBottom: 12 }}>{error}</div>}
+
+          <div style={{ fontSize: 12, color: '#6a9', marginBottom: 8, fontWeight: 700 }}>OPEN TABLES</div>
+          {tables.length === 0 && (
+            <div style={{ padding: 20, textAlign: 'center', color: '#567', background: 'rgba(0,0,0,0.2)', borderRadius: 12 }}>
+              No open tables — create one to start
+            </div>
+          )}
+          {tables.map(t => (
+            <div key={t.id} style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '12px 14px', marginBottom: 8, borderRadius: 12,
+              background: 'rgba(0,40,70,0.5)', border: '1px solid #1e4a6f',
+            }}>
+              <div>
+                <div style={{ fontWeight: 700 }}>{t.playerCount}/{t.maxSeats} players</div>
+                <div style={{ fontSize: 11, color: '#6a9' }}>
+                  {t.phase} · ₱{t.minBet}–₱{t.maxBet} · {t.mode}
+                </div>
+              </div>
+              <button type="button" onClick={() => joinTable(t.id)} disabled={busy || t.playerCount >= t.maxSeats}
+                style={{
+                  padding: '8px 16px', borderRadius: 8, border: 'none',
+                  background: '#1abc9c', color: '#fff', fontWeight: 700, cursor: 'pointer',
+                }}>
+                Join
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── TABLE ────────────────────────────────────────────────────────────────
   return (
     <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(180deg, #0a0015 0%, #1a0a2e 30%, #0a0015 70%, #050010 100%)',
-      padding: '20px 16px',
-      display: 'flex',
-      flexDirection: 'column'
+      minHeight: '100vh', maxWidth: 480, margin: '0 auto',
+      background: 'linear-gradient(180deg, #0b1f14 0%, #0a2818 40%, #0d1a12 100%)',
+      color: '#e8ffe8', fontFamily: 'system-ui, sans-serif',
+      display: 'flex', flexDirection: 'column',
     }}>
-      {/* Header */}
       <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '16px',
-        padding: '14px 18px',
-        background: 'linear-gradient(145deg, rgba(255, 215, 0, 0.1), rgba(255, 215, 0, 0.05))',
-        borderRadius: '20px',
-        border: '2px solid',
-        borderImage: 'linear-gradient(135deg, #ffd700, #ffed4a, #ffd700) 1'
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        padding: '10px 14px', background: 'rgba(0,0,0,0.45)', borderBottom: '1px solid #1a4a2a',
       }}>
-        <Link to="/" style={{
-            display: 'inline-flex', alignItems: 'center',
-            background: 'linear-gradient(145deg, #ffd700, #b8860b)',
-            borderRadius: '12px',
-            padding: '10px 18px',
-            color: '#1a0a2e',
-            fontWeight: '800',
-            fontSize: '13px',
-            textDecoration: 'none'
-          }}
-        >
-          ← Home
-        </Link>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '11px', color: 'var(--gold)', opacity: 0.8 }}>Balance</div>
-          <div style={{
-            fontSize: '20px',
-            fontWeight: '900',
-            background: 'linear-gradient(135deg, #ffd700, #ffed4a)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent'
-          }}>
-            ₱{Number(balance).toLocaleString('en', { minimumFractionDigits: 2 })}
-          </div>
-        </div>
-      </div>
-
-      {/* Game Title */}
-      <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-        <h2 style={{
-          fontSize: '28px',
-          background: 'linear-gradient(135deg, #ffd700 0%, #ffed4a 50%, #ffd700 100%)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          fontWeight: '900',
-          letterSpacing: '2px'
-        }}>
-          🃏 {game.name}
-        </h2>
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginTop: '8px' }}>
-          <span style={{
-            padding: '6px 14px',
-            background: 'rgba(255, 215, 0, 0.15)',
-            borderRadius: '20px',
-            fontSize: '12px',
-            color: 'var(--gold)'
-          }}>
-            RTP {game.rtp}%
-          </span>
-          <span style={{
-            padding: '6px 14px',
-            background: 'rgba(255, 45, 117, 0.15)',
-            borderRadius: '20px',
-            fontSize: '12px',
-            color: 'var(--primary)'
-          }}>
-            ₱{game.min_bet} - ₱{game.max_bet}
-          </span>
-        </div>
-      </div>
-
-      {/* Card Table */}
-      <div style={{
-        flex: 1,
-        background: 'linear-gradient(145deg, rgba(0, 100, 50, 0.3), rgba(0, 50, 25, 0.4))',
-        borderRadius: '24px',
-        border: '4px solid rgba(139, 90, 43, 0.5)',
-        padding: '24px',
-        position: 'relative',
-        marginBottom: '20px'
-      }}>
-        {/* Dealer Section */}
-        <div style={{ textAlign: 'center', marginBottom: '30px' }}>
-          <div style={{
-            fontSize: '14px',
-            color: 'rgba(255, 255, 255, 0.7)',
-            marginBottom: '12px',
-            textTransform: 'uppercase',
-            letterSpacing: '2px'
-          }}>
-            Dealer {dealerCards.length > 0 && `(${dealerValue})`}
-          </div>
-          <div style={{
-            display: 'flex',
-            justifyContent: 'center',
-            gap: '12px',
-            minHeight: '112px'
-          }}>
-            {dealerCards.map((card, i) => (
-              <Card key={i} card={card} faceDown={card.faceDown} dealing={true} />
-            ))}
-          </div>
-        </div>
-
-        {/* Center Divider */}
-        <div style={{
-          height: '2px',
-          background: 'linear-gradient(90deg, transparent, rgba(255, 215, 0, 0.5), transparent)',
-          margin: '20px 0'
-        }} />
-
-        {/* Player Section */}
+        <button type="button" onClick={leaveTable} style={{ background: 'none', border: 'none', color: '#7ec8ff', fontWeight: 700, cursor: 'pointer' }}>
+          ← Leave
+        </button>
         <div style={{ textAlign: 'center' }}>
-          <div style={{
-            display: 'flex',
-            justifyContent: 'center',
-            gap: '12px',
-            minHeight: '112px',
-            marginBottom: '12px'
-          }}>
-            {playerCards.map((card, i) => (
-              <Card key={i} card={card} dealing={true} winning={result === 'win' || result === 'blackjack'} />
-            ))}
-          </div>
-          <div style={{
-            fontSize: '14px',
-            color: 'rgba(255, 255, 255, 0.7)',
-            textTransform: 'uppercase',
-            letterSpacing: '2px'
-          }}>
-            Your Hand {playerCards.length > 0 && `(${playerValue})`}
+          <div style={{ fontWeight: 800, color: '#FFD700', fontSize: 13 }}>{table?.gameName || game.name}</div>
+          <div style={{ fontSize: 10, color: '#6a9' }}>
+            {table?.phase?.toUpperCase()} · {table?.seats?.length || 0} players · LIVE
           </div>
         </div>
-
-        {/* Table decoration */}
-        <div style={{
-          position: 'absolute',
-          top: '10px',
-          fontSize: '40px',
-          opacity: '0.1'
-        }}>🃏</div>
-        <div style={{
-          position: 'absolute',
-          top: '10px',
-          right: '10px',
-          fontSize: '40px',
-          opacity: '0.1'
-        }}>♠️</div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 10, color: '#6a9' }}>BALANCE</div>
+          <div style={{ fontWeight: 800, color: '#FFD700' }}>₱{Number(balance).toLocaleString()}</div>
+        </div>
       </div>
 
-      {/* Message */}
-      {message && (
+      <div style={{ flex: 1, padding: 14 }}>
+        {/* Dealer */}
         <div style={{
-          textAlign: 'center',
-          marginBottom: '20px',
-          padding: '16px',
-          background: result === 'win' || result === 'blackjack' 
-            ? 'rgba(0, 245, 160, 0.2)' 
-            : result === 'lose' 
-              ? 'rgba(255, 71, 87, 0.2)' 
-              : 'rgba(255, 215, 0, 0.2)',
-          borderRadius: '16px',
-          border: `2px solid ${result === 'win' || result === 'blackjack' ? '#00f5a0' : result === 'lose' ? '#ff4757' : '#ffd700'}`
+          background: 'rgba(0,0,0,0.25)', borderRadius: 14, padding: 12, marginBottom: 12,
+          border: '1px solid rgba(255,215,0,0.15)',
         }}>
-          <span style={{
-            fontSize: '20px',
-            fontWeight: '900',
-            color: result === 'win' || result === 'blackjack' ? '#00f5a0' : result === 'lose' ? '#ff4757' : '#ffd700'
-          }}>
-            {message}
-          </span>
-          {lastWin > 0 && (
-            <div style={{
-              marginTop: '8px',
-              fontSize: '24px',
-              fontWeight: '900',
-              color: '#ffd700'
-            }}>
-              +₱{lastWin}
+          <Hand
+            label="Dealer"
+            cards={table?.dealerHand}
+            value={table?.phase === 'playing' ? table?.dealerValue : (table?.dealerHand?.length ? undefined : null)}
+          />
+          {table?.phase !== 'playing' && table?.dealerHand?.length > 0 && (
+            <div style={{ fontSize: 12, color: '#ada' }}>
+              {/* value shown after reveal via seat logic */}
             </div>
           )}
         </div>
-      )}
+
+        {/* Message */}
+        <div style={{
+          textAlign: 'center', padding: '8px 10px', marginBottom: 12, borderRadius: 10,
+          background: 'rgba(255,215,0,0.08)', color: '#FFD700', fontWeight: 700, fontSize: 13,
+        }}>
+          {table?.message || msg || '…'}
+        </div>
+
+        {error && <div style={{ color: '#ff6b6b', fontSize: 12, marginBottom: 8, textAlign: 'center' }}>{error}</div>}
+
+        {/* Seats */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {(table?.seats || []).map(seat => {
+            const mine = String(seat.userId) === String(user.id);
+            const turn = String(table.currentTurnUserId) === String(seat.userId);
+            return (
+              <div key={seat.userId} style={{
+                padding: 10, borderRadius: 12,
+                background: turn ? 'rgba(255,215,0,0.12)' : 'rgba(0,0,0,0.22)',
+                border: mine ? '1px solid #FFD70066' : '1px solid #1a3a28',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 12 }}>
+                  <span style={{ fontWeight: 800, color: mine ? '#FFD700' : '#cde' }}>
+                    {mine ? 'You' : seat.username}
+                    {turn ? ' · TURN' : ''}
+                  </span>
+                  <span style={{ color: '#8a8' }}>
+                    Bet ₱{seat.bet || 0}
+                    {seat.side ? ` · ${seat.side}` : ''}
+                    {seat.result ? ` · ${seat.result}` : ''}
+                    {seat.lastPayout > 0 ? ` · +₱${seat.lastPayout}` : ''}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  {(seat.hand || []).map((c, i) => <Card key={i} card={c} small />)}
+                  {seat.hand?.length > 0 && (
+                    <span style={{ marginLeft: 6, fontSize: 12, color: '#ada', fontWeight: 700 }}>
+                      {seat.handValue}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Controls */}
-      {gameState === 'betting' && (
-        <div style={{ textAlign: 'center' }}>
-          {/* Bet Controls */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '20px',
-            marginBottom: '20px',
-            padding: '16px',
-            background: 'linear-gradient(145deg, rgba(255, 215, 0, 0.1), rgba(255, 215, 0, 0.05))',
-            borderRadius: '20px',
-            border: '1px solid rgba(255, 215, 0, 0.3)'
-          }}>
-            <button
-              onClick={() => setBet(Math.max(Number(game.min_bet), bet - Number(game.min_bet)))}
-              style={{
-                width: '48px',
-                height: '48px',
-                borderRadius: '50%',
-                background: 'linear-gradient(145deg, #ffd700, #b8860b)',
-                border: 'none',
-                color: '#1a0a2e',
-                fontSize: '24px',
-                fontWeight: '900',
-                cursor: 'pointer'
-              }}
-            >−</button>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '11px', color: 'rgba(255, 215, 0, 0.7)' }}>BET</div>
-              <div style={{ fontSize: '28px', fontWeight: '900', color: '#ffd700' }}>₱{bet}</div>
+      <div style={{
+        padding: '12px 14px 20px', background: 'rgba(0,0,0,0.55)',
+        borderTop: '1px solid #1a4a2a',
+      }}>
+        {canBet && (
+          <>
+            {sideOptions.length > 0 && (
+              <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+                {sideOptions.map(s => (
+                  <button key={s} type="button" onClick={() => setSide(s)}
+                    style={{
+                      padding: '8px 12px', borderRadius: 8, border: side === s ? '2px solid #FFD700' : '1px solid #2a5',
+                      background: side === s ? 'rgba(255,215,0,0.15)' : 'rgba(0,40,20,0.5)',
+                      color: side === s ? '#FFD700' : '#8c8', fontWeight: 700, textTransform: 'capitalize',
+                    }}>{s}</button>
+                ))}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+              <input
+                type="number"
+                value={bet}
+                min={table.minBet}
+                max={Math.min(table.maxBet, balance)}
+                onChange={e => setBet(Number(e.target.value))}
+                style={{
+                  flex: 1, padding: 10, borderRadius: 8, border: '1px solid #2a5',
+                  background: '#0a1a10', color: '#FFD700', fontWeight: 700,
+                }}
+              />
+              <button type="button" onClick={placeBet} disabled={busy || bet > balance || bet < table.minBet}
+                style={{
+                  padding: '12px 20px', borderRadius: 10, border: 'none',
+                  background: 'linear-gradient(135deg, #FFD700, #e6a800)', color: '#1a1200',
+                  fontWeight: 900, cursor: busy ? 'wait' : 'pointer',
+                }}>
+                {mySeat?.bet ? 'Raise Bet' : 'Place Bet'}
+              </button>
             </div>
-            <button
-              onClick={() => setBet(Math.min(Number(game.max_bet), bet + Number(game.min_bet)))}
-              disabled={bet + Number(game.min_bet) > balance}
+            <div style={{ fontSize: 11, color: '#6a8' }}>
+              Min ₱{table.minBet} · Max ₱{table.maxBet} · Balance ₱{balance.toLocaleString()}
+            </div>
+          </>
+        )}
+
+        {table?.phase === 'playing' && isMyTurn && mySeat?.status === 'playing' && (
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button type="button" onClick={hit} disabled={busy}
               style={{
-                width: '48px',
-                height: '48px',
-                borderRadius: '50%',
-                background: 'linear-gradient(145deg, #ffd700, #b8860b)',
-                border: 'none',
-                color: '#1a0a2e',
-                fontSize: '24px',
-                fontWeight: '900',
-                cursor: bet + Number(game.min_bet) > balance ? 'not-allowed' : 'pointer',
-                opacity: bet + Number(game.min_bet) > balance ? 0.4 : 1
-              }}
-            >+</button>
+                flex: 1, padding: 14, borderRadius: 12, border: 'none',
+                background: 'linear-gradient(135deg, #3498db, #2980b9)', color: '#fff', fontWeight: 900,
+              }}>HIT</button>
+            <button type="button" onClick={stand} disabled={busy}
+              style={{
+                flex: 1, padding: 14, borderRadius: 12, border: 'none',
+                background: 'linear-gradient(135deg, #e67e22, #d35400)', color: '#fff', fontWeight: 900,
+              }}>STAND</button>
           </div>
+        )}
 
-          {/* Low / Zero Balance Warning */}
-          {balance <= 0 && (
-            <div style={{
-              marginBottom: '16px',
-              padding: '14px 20px',
-              background: 'rgba(255, 71, 87, 0.15)',
-              border: '2px solid #ff4757',
-              borderRadius: '16px',
-              textAlign: 'center',
-              color: '#ff4757',
-              fontWeight: '700',
-              fontSize: '14px'
-            }}>
-              💸 No balance! Please <span
-                onClick={() => navigate('/wallet')}
-                style={{ textDecoration: 'underline', cursor: 'pointer', color: '#ffd700' }}
-              >deposit funds</span> to play.
-            </div>
-          )}
-          {balance > 0 && balance < bet && (
-            <div style={{
-              marginBottom: '16px',
-              padding: '14px 20px',
-              background: 'rgba(254, 228, 64, 0.1)',
-              border: '2px solid #fee440',
-              borderRadius: '16px',
-              textAlign: 'center',
-              color: '#fee440',
-              fontWeight: '700',
-              fontSize: '14px'
-            }}>
-              ⚠️ Insufficient balance. Lower your bet or <span
-                onClick={() => navigate('/wallet')}
-                style={{ textDecoration: 'underline', cursor: 'pointer', color: '#ffd700' }}
-              >deposit more</span>.
-            </div>
-          )}
-
-          {/* Deal Button */}
-          <button
-            onClick={deal}
-            disabled={dealing || balance < bet || balance <= 0}
-            style={{
-              padding: '20px 60px',
-              background: (balance < bet || balance <= 0)
-                ? 'linear-gradient(135deg, #333, #222)'
-                : 'linear-gradient(135deg, #ffd700, #ffed4a)',
-              border: 'none',
-              borderRadius: '30px',
-              color: (balance < bet || balance <= 0) ? '#666' : '#1a0a2e',
-              fontSize: '20px',
-              fontWeight: '900',
-              cursor: (balance < bet || balance <= 0) ? 'not-allowed' : 'pointer',
-              boxShadow: (balance < bet || balance <= 0) ? 'none' : '0 0 40px rgba(255, 215, 0, 0.5)',
-              textTransform: 'uppercase',
-              letterSpacing: '3px'
-            }}
-          >
-            🃏 DEAL
-          </button>
-        </div>
-      )}
-
-      {gameState === 'playing' && (
-        <div style={{
-          display: 'flex',
-          justifyContent: 'center',
-          gap: '20px'
-        }}>
-          <button
-            onClick={() => hit(playerCards)}
-            disabled={dealing}
-            style={{
-              padding: '18px 40px',
-              background: 'linear-gradient(145deg, #00f5d4, #00d4aa)',
-              border: 'none',
-              borderRadius: '20px',
-              color: '#0d0221',
-              fontSize: '18px',
-              fontWeight: '800',
-              cursor: 'pointer',
-              boxShadow: '0 0 30px rgba(0, 245, 212, 0.5)'
-            }}
-          >
-            HIT
-          </button>
-          <button
-            onClick={() => stand(playerCards)}
-            disabled={dealing}
-            style={{
-              padding: '18px 40px',
-              background: 'linear-gradient(145deg, #ff2d75, #ff6b9d)',
-              border: 'none',
-              borderRadius: '20px',
-              color: 'white',
-              fontSize: '18px',
-              fontWeight: '800',
-              cursor: 'pointer',
-              boxShadow: '0 0 30px rgba(255, 45, 117, 0.5)'
-            }}
-          >
-            STAND
-          </button>
-        </div>
-      )}
-
-      {gameState === 'result' && (
-        <div style={{ textAlign: 'center' }}>
-          <button
-            onClick={newRound}
-            style={{
-              padding: '18px 50px',
-              background: 'linear-gradient(145deg, #ffd700, #b8860b)',
-              border: 'none',
-              borderRadius: '20px',
-              color: '#1a0a2e',
-              fontSize: '18px',
-              fontWeight: '800',
-              cursor: 'pointer',
-              boxShadow: '0 0 30px rgba(255, 215, 0, 0.5)'
-            }}
-          >
-            NEW ROUND
-          </button>
-        </div>
-      )}
-
-      <style>{`
-        @keyframes dealCard {
-          from { transform: translateY(-50px) rotateY(90deg); opacity: 0; }
-          to { transform: translateY(0) rotateY(0); opacity: 1; }
-        }
-      `}</style>
+        {table?.phase === 'results' && mySeat && (
+          <div style={{ textAlign: 'center', fontWeight: 800, fontSize: 16, color: mySeat.lastPayout > 0 ? '#FFD700' : '#aaa' }}>
+            {mySeat.result === 'win' || mySeat.result === 'blackjack'
+              ? `You won ₱${mySeat.lastPayout}`
+              : mySeat.result === 'push'
+                ? `Push — ₱${mySeat.lastPayout} returned`
+                : 'No win this round'}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -110,6 +110,9 @@ app.set('io', io);
 const { initMultiplayer } = require('./games/multiplayer');
 initMultiplayer(io);
 
+const { initCardTables } = require('./games/card-tables');
+initCardTables(io);
+
 // ── Lucky draw scheduler ─────────────────────────────────────────────────────
 const { runLuckyDraw } = require('./promotions/routes');
 setInterval(runLuckyDraw, 60 * 60 * 1000);
