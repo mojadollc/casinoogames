@@ -88,6 +88,7 @@ export const adminAPI = {
   dashboard: () => api.get('/admin/dashboard'),
   players: (params) => api.get('/admin/players', { params }),
   player: (id) => api.get(`/admin/players/${id}`),
+  geocodePlayer: (id, address) => api.post(`/admin/players/${id}/geocode`, address ? { address } : {}),
   updatePlayerStatus: (id, status) => api.put(`/admin/players/${id}/status`, { status }),
   updateKYC: (id, status) => api.put(`/admin/players/${id}/kyc`, { kyc_status: status }),
   wallets: () => api.get('/admin/wallets'),

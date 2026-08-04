@@ -66,7 +66,7 @@ const PBtn = ({ children, active, disabled, onClick }) => (
 );
 
 /* ── Player Detail Panel (full KYC) ─────────────────────── */
-const DetailPanel = ({ player, loading, onClose, onAction }) => {
+const DetailPanel = ({ player, loading, onClose, onAction, onGeocode, geocoding }) => {
   if (!player && !loading) return null;
 
   const claimed = player?.kyc_bonus_claimed || {};
@@ -128,6 +128,31 @@ const DetailPanel = ({ player, loading, onClose, onAction }) => {
               <InfoRow label="Email" value={player.email} />
               <InfoRow label="Phone" value={player.phone} empty="Not provided" />
               <InfoRow label="Address" value={player.address} empty="Not provided" multiline />
+              {player.geocoded_address && player.geocoded_address !== player.address && (
+                <InfoRow label="Geocoded" value={player.geocoded_address} multiline />
+              )}
+              {(player.latitude != null && player.longitude != null) && (
+                <InfoRow
+                  label="Coords"
+                  value={`${Number(player.latitude).toFixed(6)}, ${Number(player.longitude).toFixed(6)}`}
+                  mono
+                />
+              )}
+              {player.maps_url && (
+                <a
+                  href={player.maps_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '6px',
+                    padding: '8px 12px', borderRadius: '8px', fontSize: '13px', fontWeight: 600,
+                    background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.25)',
+                    color: '#60a5fa', textDecoration: 'none', width: 'fit-content',
+                  }}
+                >
+                  🗺️ Open in Google Maps
+                </a>
+              )}
               <InfoRow label="User ID" value={player.id} mono />
             </div>
 
@@ -177,6 +202,15 @@ const DetailPanel = ({ player, loading, onClose, onAction }) => {
                 {player.kyc_status === 'verified' && (
                   <button onClick={() => onAction('kyc_reject', player.id)} style={actionBtnStyle('#fee440', 'rgba(254,228,64,0.08)', 'rgba(254,228,64,0.2)')}>
                     ⚠️ Revoke KYC
+                  </button>
+                )}
+                {player.address && (
+                  <button
+                    onClick={() => onGeocode?.(player.id)}
+                    disabled={geocoding}
+                    style={actionBtnStyle('#60a5fa', 'rgba(96,165,250,0.1)', 'rgba(96,165,250,0.25)')}
+                  >
+                    {geocoding ? '⏳ Geocoding…' : '🗺️ Geocode Address'}
                   </button>
                 )}
               </div>
@@ -242,6 +276,7 @@ export default function AdminPlayers() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [geocoding, setGeocoding] = useState(false);
   const [toast, setToast] = useState('');
 
   const fetchPlayers = (s, p = 1, kyc = kycFilter, st = statusFilter) => {
@@ -276,6 +311,26 @@ export default function AdminPlayers() {
       // keep list row data if detail fails
     } finally {
       setDetailLoading(false);
+    }
+  };
+
+  const handleGeocode = async (id) => {
+    setGeocoding(true);
+    try {
+      const { data } = await adminAPI.geocodePlayer(id);
+      notify('✓ Address geocoded');
+      setSelected(prev => prev ? {
+        ...prev,
+        latitude: data.latitude,
+        longitude: data.longitude,
+        geocoded_address: data.geocoded_address,
+        maps_url: data.maps_url,
+      } : null);
+      fetchPlayers(search, page);
+    } catch (err) {
+      notify('✗ ' + (err.response?.data?.error || 'Geocode failed'));
+    } finally {
+      setGeocoding(false);
     }
   };
 
@@ -406,9 +461,22 @@ export default function AdminPlayers() {
                       </td>
                       <td style={{ padding: '14px 20px', color: '#e0e0f0', fontSize: '12px', minWidth: '180px', maxWidth: '280px' }}>
                         {p.address ? (
-                          <span title={p.address} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            📍 {p.address}
-                          </span>
+                          <div>
+                            <span title={p.address} style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              📍 {p.address}
+                            </span>
+                            {p.maps_url && (
+                              <a
+                                href={p.maps_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={e => e.stopPropagation()}
+                                style={{ fontSize: '11px', color: '#60a5fa', textDecoration: 'none' }}
+                              >
+                                Open map ↗
+                              </a>
+                            )}
+                          </div>
                         ) : (
                           <span style={{ color: '#333355' }}>—</span>
                         )}
@@ -466,6 +534,8 @@ export default function AdminPlayers() {
         loading={detailLoading}
         onClose={() => setSelected(null)}
         onAction={handleAction}
+        onGeocode={handleGeocode}
+        geocoding={geocoding}
       />
     </div>
   );

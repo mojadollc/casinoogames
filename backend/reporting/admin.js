@@ -105,17 +105,26 @@ router.get('/players', adminAuth, async (req, res) => {
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const lim = Math.min(parseInt(limit) || 20, 100);
 
-    // Include KYC columns when available (migration 004)
+    // Include KYC + geocode columns when available
     let hasKycCols = true;
+    let hasGeoCols = true;
     try {
       await query('SELECT profile_image, address, kyc_bonus_claimed FROM users LIMIT 1');
     } catch {
       hasKycCols = false;
     }
+    try {
+      await query('SELECT latitude, longitude, geocoded_address FROM users LIMIT 1');
+    } catch {
+      hasGeoCols = false;
+    }
 
     const kycSelect = hasKycCols
       ? ', u.profile_image, u.address, u.kyc_bonus_claimed'
       : ', NULL as profile_image, NULL as address, NULL as kyc_bonus_claimed';
+    const geoSelect = hasGeoCols
+      ? ', u.latitude, u.longitude, u.geocoded_address'
+      : ', NULL as latitude, NULL as longitude, NULL as geocoded_address';
 
     let where = 'WHERE u.role_id = 1';
     const params = [];
@@ -134,7 +143,7 @@ router.get('/players', adminAuth, async (req, res) => {
     }
 
     const sql = `SELECT u.id, u.username, u.email, u.phone, u.vip_level, u.kyc_status, u.status, u.created_at
-      ${kycSelect},
+      ${kycSelect}${geoSelect},
       COALESCE(w.balance, 0) as balance
       FROM users u LEFT JOIN wallets w ON w.user_id = u.id
       ${where}
@@ -154,10 +163,14 @@ router.get('/players', adminAuth, async (req, res) => {
       if (typeof claimed === 'string') {
         try { claimed = JSON.parse(claimed); } catch { claimed = {}; }
       }
+      const lat = r.latitude != null ? parseFloat(r.latitude) : null;
+      const lng = r.longitude != null ? parseFloat(r.longitude) : null;
       return {
         ...r,
+        latitude: lat,
+        longitude: lng,
+        maps_url: (lat != null && lng != null) ? `https://www.google.com/maps?q=${lat},${lng}` : null,
         kyc_bonus_claimed: claimed || {},
-        // Don't send huge base64 in list — only a flag; full image on detail
         has_selfie: !!(r.profile_image && r.profile_image !== 'kyc_selfie_verified'),
         profile_image: r.profile_image && r.profile_image.startsWith('data:image/')
           ? r.profile_image
@@ -172,22 +185,31 @@ router.get('/players', adminAuth, async (req, res) => {
   }
 });
 
-// Single player detail (full KYC + selfie)
+// Single player detail (full KYC + selfie + geocode)
 router.get('/players/:id', adminAuth, async (req, res) => {
   try {
     let hasKycCols = true;
+    let hasGeoCols = true;
     try {
       await query('SELECT profile_image, address, kyc_bonus_claimed FROM users LIMIT 1');
     } catch {
       hasKycCols = false;
     }
+    try {
+      await query('SELECT latitude, longitude, geocoded_address FROM users LIMIT 1');
+    } catch {
+      hasGeoCols = false;
+    }
     const kycSelect = hasKycCols
       ? ', u.profile_image, u.address, u.kyc_bonus_claimed'
       : ', NULL as profile_image, NULL as address, NULL as kyc_bonus_claimed';
+    const geoSelect = hasGeoCols
+      ? ', u.latitude, u.longitude, u.geocoded_address'
+      : ', NULL as latitude, NULL as longitude, NULL as geocoded_address';
 
     const result = await query(
       `SELECT u.id, u.username, u.email, u.phone, u.vip_level, u.kyc_status, u.status, u.created_at, u.updated_at
-       ${kycSelect},
+       ${kycSelect}${geoSelect},
        COALESCE(w.balance, 0) as balance, COALESCE(w.bonus_balance, 0) as bonus_balance
        FROM users u LEFT JOIN wallets w ON w.user_id = u.id
        WHERE u.id = ? AND u.role_id = 1`,
@@ -199,14 +221,53 @@ router.get('/players/:id', adminAuth, async (req, res) => {
     if (typeof claimed === 'string') {
       try { claimed = JSON.parse(claimed); } catch { claimed = {}; }
     }
+    const lat = row.latitude != null ? parseFloat(row.latitude) : null;
+    const lng = row.longitude != null ? parseFloat(row.longitude) : null;
     res.json({
       ...row,
+      latitude: lat,
+      longitude: lng,
+      maps_url: (lat != null && lng != null) ? `https://www.google.com/maps?q=${lat},${lng}` : null,
       kyc_bonus_claimed: claimed || {},
       has_selfie: !!(row.profile_image && row.profile_image !== 'kyc_selfie_verified'),
     });
   } catch (err) {
     console.error('Player detail error:', err.message);
     res.status(500).json({ error: 'Failed to load player' });
+  }
+});
+
+// Re-geocode a player's address (admin)
+router.post('/players/:id/geocode', adminAuth, async (req, res) => {
+  try {
+    const { geocodeAddress, mapsLink } = require('../utils/geocode');
+    try { await query('ALTER TABLE users ADD COLUMN latitude DECIMAL(10,7) NULL'); } catch {}
+    try { await query('ALTER TABLE users ADD COLUMN longitude DECIMAL(10,7) NULL'); } catch {}
+    try { await query('ALTER TABLE users ADD COLUMN geocoded_address VARCHAR(500) NULL'); } catch {}
+
+    const result = await query('SELECT id, address FROM users WHERE id = ? AND role_id = 1', [req.params.id]);
+    if (!result.rows?.length) return res.status(404).json({ error: 'Player not found' });
+    const address = req.body?.address || result.rows[0].address;
+    if (!address) return res.status(400).json({ error: 'No address to geocode' });
+
+    const geo = await geocodeAddress(address);
+    if (!geo) return res.status(422).json({ error: 'Could not geocode this address' });
+
+    await query(
+      'UPDATE users SET latitude = ?, longitude = ?, geocoded_address = ?, updated_at = NOW() WHERE id = ?',
+      [geo.lat, geo.lng, geo.displayName.slice(0, 500), req.params.id]
+    );
+
+    res.json({
+      message: 'Address geocoded',
+      latitude: geo.lat,
+      longitude: geo.lng,
+      geocoded_address: geo.displayName,
+      maps_url: mapsLink(geo.lat, geo.lng),
+    });
+  } catch (err) {
+    console.error('Admin geocode error:', err.message);
+    res.status(500).json({ error: 'Geocode failed' });
   }
 });
 

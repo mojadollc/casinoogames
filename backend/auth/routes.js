@@ -9,6 +9,7 @@ const { body, validationResult } = require('express-validator');
 const { v4: uuidv4 } = require('uuid');
 const { createAffiliation } = require('../affiliation/routes');
 const { creditWallet } = require('../wallet/routes');
+const { geocodeAddress, reverseGeocode, parseCoords, mapsLink } = require('../utils/geocode');
 
 const router = express.Router();
 
@@ -184,6 +185,9 @@ router.post('/kyc-bonus', authenticate, async (req, res) => {
     try { await query('ALTER TABLE users ADD COLUMN profile_image TEXT'); } catch {}
     try { await query('ALTER TABLE users ADD COLUMN address VARCHAR(500)'); } catch {}
     try { await query('ALTER TABLE users ADD COLUMN kyc_bonus_claimed JSON'); } catch {}
+    try { await query('ALTER TABLE users ADD COLUMN latitude DECIMAL(10,7) NULL'); } catch {}
+    try { await query('ALTER TABLE users ADD COLUMN longitude DECIMAL(10,7) NULL'); } catch {}
+    try { await query('ALTER TABLE users ADD COLUMN geocoded_address VARCHAR(500) NULL'); } catch {}
 
     const userResult = await query('SELECT kyc_bonus_claimed, profile_image, phone FROM users WHERE id = ?', [req.user.id]);
     const user = userResult.rows[0];
@@ -200,6 +204,7 @@ router.post('/kyc-bonus', authenticate, async (req, res) => {
 
     const updates = [];
     const params = [];
+    let geoResult = null;
 
     if (type === 'selfie') {
       // Store actual selfie (base64 data URL). Cap size to avoid huge rows (~400KB).
@@ -213,27 +218,75 @@ router.post('/kyc-bonus', authenticate, async (req, res) => {
         return res.status(400).json({ error: 'Invalid selfie image format' });
       }
       updates.push('profile_image = ?');
-      // Keep legacy 'verified' fallback but prefer real image
       params.push(value === 'verified' ? 'kyc_selfie_verified' : value);
     } else if (type === 'phone' && value) {
       updates.push('phone = ?');
       params.push(String(value).trim());
     } else if (type === 'location' && value) {
-      // Prefer readable address text; objects/coords still accepted
-      let addr;
-      if (typeof value === 'object') {
-        addr = value.address
-          ? String(value.address).trim()
-          : JSON.stringify(value);
-        if (value.coords && value.address) {
-          addr = `${String(value.address).trim()} [${value.coords}]`;
+      let addr = '';
+      let clientCoords = null;
+
+      if (typeof value === 'object' && value !== null) {
+        addr = value.address ? String(value.address).trim() : '';
+        if (value.coords) clientCoords = parseCoords(String(value.coords));
+        if (value.lat != null && value.lng != null) {
+          clientCoords = { lat: parseFloat(value.lat), lng: parseFloat(value.lng) };
         }
       } else {
         addr = String(value).trim();
+        // If user pasted pure coords as address
+        clientCoords = parseCoords(addr);
       }
-      if (!addr) return res.status(400).json({ error: 'Address is required' });
+
+      if (!addr && !clientCoords) {
+        return res.status(400).json({ error: 'Address is required' });
+      }
+
+      // Prefer typed address for storage; fall back to reverse-geocoded label
+      let storeAddress = addr;
+      let lat = clientCoords?.lat ?? null;
+      let lng = clientCoords?.lng ?? null;
+      let geocodedLabel = null;
+
+      // 1) If we only have coords → reverse geocode
+      if ((!storeAddress || clientCoords) && clientCoords) {
+        const rev = await reverseGeocode(clientCoords.lat, clientCoords.lng);
+        if (rev) {
+          lat = rev.lat;
+          lng = rev.lng;
+          geocodedLabel = rev.displayName;
+          if (!storeAddress) storeAddress = rev.displayName;
+        }
+      }
+
+      // 2) Forward geocode typed address (always try so admin gets map pin)
+      if (storeAddress) {
+        geoResult = await geocodeAddress(storeAddress);
+        if (geoResult) {
+          // Prefer geocoded coords unless client GPS was provided
+          if (lat == null || lng == null) {
+            lat = geoResult.lat;
+            lng = geoResult.lng;
+          }
+          geocodedLabel = geoResult.displayName;
+        }
+      }
+
+      if (!storeAddress) {
+        return res.status(400).json({ error: 'Address is required' });
+      }
+
       updates.push('address = ?');
-      params.push(addr.slice(0, 500));
+      params.push(storeAddress.slice(0, 500));
+
+      if (lat != null && lng != null && Number.isFinite(lat) && Number.isFinite(lng)) {
+        updates.push('latitude = ?', 'longitude = ?');
+        params.push(lat, lng);
+      }
+      if (geocodedLabel) {
+        updates.push('geocoded_address = ?');
+        params.push(String(geocodedLabel).slice(0, 500));
+      }
     }
 
     claimed[type] = true;
@@ -253,7 +306,16 @@ router.post('/kyc-bonus', authenticate, async (req, res) => {
     );
 
     const allClaimed = Object.keys(KYC_BONUS).every(k => claimed[k]);
-    res.json({ message: `\u20b1${amount} bonus credited!`, amount, allClaimed, claimed });
+    const payload = { message: `\u20b1${amount} bonus credited!`, amount, allClaimed, claimed };
+    if (type === 'location' && geoResult) {
+      payload.geocoded = {
+        lat: geoResult.lat,
+        lng: geoResult.lng,
+        displayName: geoResult.displayName,
+        mapsUrl: mapsLink(geoResult.lat, geoResult.lng),
+      };
+    }
+    res.json(payload);
   } catch (err) {
     console.error('KYC bonus error:', err.message, err.stack);
     res.status(500).json({ error: 'Failed to process bonus' });
