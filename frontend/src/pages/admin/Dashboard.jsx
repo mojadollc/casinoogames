@@ -161,9 +161,10 @@ export default function AdminDashboard() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '28px' }}>
             <StatCard icon="🟢" label="Online Players"    value={stats.onlinePlayers}                                                        accent="#00f5a0" />
             <StatCard icon="💰" label="Daily Revenue"     value={`₱${stats.dailyRevenue.toLocaleString()}`}                                   accent="#ffd700" />
-            <StatCard icon="📥" label="Today Deposits"    value={`₱${stats.deposits.total.toLocaleString()}`}                                sub={`${stats.deposits.count} transactions`} />
+            <StatCard icon="📥" label="Today Deposits"    value={`₱${stats.deposits.total.toLocaleString()}`}                                sub={`${stats.deposits.count} completed (Xendit paid)`} accent="#00f5a0" />
+            <StatCard icon="⏳" label="Pending Deposits"  value={`₱${(stats.pendingDeposits?.total || 0).toLocaleString()}`}                sub={`${stats.pendingDeposits?.count || 0} awaiting payment`} accent="#fbbf24" />
             <StatCard icon="💳" label="Total Deposited"   value={`₱${stats.totalDeposited.total.toLocaleString()}`}                          sub={`${stats.totalDeposited.count} completed deposits`} accent="#00f5a0" />
-            <StatCard icon="📤" label="Withdrawals"       value={`₱${stats.withdrawals.total.toLocaleString()}`}                             sub={`${stats.withdrawals.count} transactions`} accent="#a78bfa" />
+            <StatCard icon="📤" label="Withdrawals"       value={`₱${stats.withdrawals.total.toLocaleString()}`}                             sub={`${stats.withdrawals.count} approved/completed`} accent="#a78bfa" />
             <StatCard icon="🎲" label="Total Bets"        value={`₱${stats.bets.total.toLocaleString()}`}                                    sub={`${stats.bets.count} spins`} accent="#60a5fa" />
             <StatCard icon="🏆" label="Total Wins"        value={`₱${stats.wins.toLocaleString()}`}                                          accent="#00f5a0" />
             <StatCard icon="📈" label="RTP"               value={`${stats.rtp}%`}                                                            accent={stats.rtp > 97 ? '#ff4757' : '#00f5a0'} alert={stats.rtp > 97} />

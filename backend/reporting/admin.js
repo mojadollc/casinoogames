@@ -61,9 +61,12 @@ router.get('/dashboard', adminAuth, async (req, res) => {
       try { return await query(sql); } catch { return fallback; }
     };
 
-    const [deposits, withdrawals, bets, wins, activeGames, totalDeposited] = await Promise.all([
-      query("SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count FROM deposit_requests WHERE created_at > NOW() - INTERVAL 1 DAY"),
-      query("SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count FROM withdrawal_requests WHERE created_at > NOW() - INTERVAL 1 DAY"),
+    // Money stats: only count successful (completed) money movement.
+    // Pending/canceled/expired Xendit invoices must NOT inflate "Today Deposits".
+    const [deposits, pendingDeposits, withdrawals, bets, wins, activeGames, totalDeposited] = await Promise.all([
+      query("SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count FROM deposit_requests WHERE status = 'completed' AND created_at > NOW() - INTERVAL 1 DAY"),
+      query("SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count FROM deposit_requests WHERE status = 'pending' AND created_at > NOW() - INTERVAL 1 DAY"),
+      query("SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count FROM withdrawal_requests WHERE status IN ('completed','approved') AND created_at > NOW() - INTERVAL 1 DAY"),
       query("SELECT COALESCE(SUM(bet_amount), 0) as total, COUNT(*) as count FROM game_rounds WHERE created_at > NOW() - INTERVAL 1 DAY"),
       query("SELECT COALESCE(SUM(win_amount), 0) as total FROM game_rounds WHERE created_at > NOW() - INTERVAL 1 DAY"),
       query("SELECT COUNT(*) as count FROM games WHERE status = 'active'"),
@@ -85,6 +88,7 @@ router.get('/dashboard', adminAuth, async (req, res) => {
       onlinePlayers: onlineUsers.size || parseInt(onlineRow.rows[0].count),
       dailyRevenue: parseFloat(dailyRevenue.toFixed(2)),
       deposits: { total: parseFloat(deposits.rows[0].total), count: parseInt(deposits.rows[0].count) },
+      pendingDeposits: { total: parseFloat(pendingDeposits.rows[0].total), count: parseInt(pendingDeposits.rows[0].count) },
       withdrawals: { total: parseFloat(withdrawals.rows[0].total), count: parseInt(withdrawals.rows[0].count) },
       bets: { total: totalBets, count: parseInt(bets.rows[0].count) },
       wins: totalWins,
