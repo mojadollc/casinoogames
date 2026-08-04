@@ -37,6 +37,10 @@ if [ "$REPO_DIR" != "$APP_DIR" ] && [ -f "$REPO_DIR/backend/server.js" ]; then
     --exclude='*/node_modules' \
     --exclude='frontend/build' \
     --exclude='*.log' \
+    --exclude='backend/uploads' \
+    --exclude='backend/uploads/**' \
+    --exclude='uploads' \
+    --exclude='uploads/**' \
     "$REPO_DIR/" "$APP_DIR/"
 fi
 
@@ -157,7 +161,9 @@ fi
 # ── 6. Backend deps ───────────────────────────────────────
 echo "▶ Installing backend dependencies..."
 cd "$APP_DIR/backend"
-mkdir -p uploads/thumbnails
+mkdir -p backend/uploads/thumbnails uploads/thumbnails
+# Never wipe user uploads on restart
+chmod -R a+rX backend/uploads 2>/dev/null || true
 npm install --omit=dev
 echo "✓ Backend dependencies installed"
 
@@ -276,11 +282,15 @@ server {
     }
 
     location /uploads/ {
+        alias $APP_DIR/backend/uploads/;
+        expires 7d;
+        add_header Cache-Control "public, max-age=604800";
+        try_files \$uri @uploads_proxy;
+    }
+    location @uploads_proxy {
         proxy_pass http://127.0.0.1:$PORT;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
-        expires 7d;
-        add_header Cache-Control "public, max-age=604800";
     }
 
     location /webhooks/ {
@@ -331,6 +341,12 @@ else
     }
 
     location /uploads/ {
+        alias $APP_DIR/backend/uploads/;
+        expires 7d;
+        add_header Cache-Control "public, max-age=604800";
+        try_files \$uri @uploads_proxy;
+    }
+    location @uploads_proxy {
         proxy_pass http://127.0.0.1:$PORT;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;

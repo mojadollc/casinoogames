@@ -1,14 +1,25 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const multer = require('multer');
 const { query } = require('../config/database');
 const { authenticate, isAdmin } = require('../middleware/auth');
 const { creditWallet } = require('../wallet/routes');
 
+// Persistent upload dirs — must match server.js (survives PM2 restart; excluded from deploy --delete)
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '../uploads');
+const THUMB_DIR = path.join(UPLOAD_DIR, 'thumbnails');
+for (const dir of [UPLOAD_DIR, THUMB_DIR]) {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+
 const thumbnailStorage = multer.diskStorage({
-  destination: path.join(__dirname, '../uploads/thumbnails'),
+  destination: (_req, _file, cb) => {
+    if (!fs.existsSync(THUMB_DIR)) fs.mkdirSync(THUMB_DIR, { recursive: true });
+    cb(null, THUMB_DIR);
+  },
   filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
+    const ext = path.extname(file.originalname).toLowerCase() || '.png';
     cb(null, `game_${req.params.id}_${Date.now()}${ext}`);
   },
 });
@@ -22,9 +33,19 @@ const upload = multer({
 });
 
 const logoStorage = multer.diskStorage({
-  destination: path.join(__dirname, '../uploads'),
+  destination: (_req, _file, cb) => {
+    if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+    cb(null, UPLOAD_DIR);
+  },
   filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
+    // Always store as logo.<ext> so URL stays stable
+    const ext = path.extname(file.originalname).toLowerCase() || '.png';
+    // Remove any previous logo.* so extension changes don't leave orphans
+    try {
+      for (const f of fs.readdirSync(UPLOAD_DIR)) {
+        if (/^logo\./i.test(f)) fs.unlinkSync(path.join(UPLOAD_DIR, f));
+      }
+    } catch {}
     cb(null, `logo${ext}`);
   },
 });
@@ -578,9 +599,7 @@ router.get('/settings', async (req, res) => {
 });
 
 router.post('/settings/logo', adminAuth, (req, res, next) => {
-  const fs = require('fs');
-  const uploadsDir = path.join(__dirname, '../uploads');
-  if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+  // Dirs ensured by UPLOAD_DIR setup + multer destination callback
   uploadLogo.single('logo')(req, res, (err) => {
     if (err) {
       if (err.code === 'LIMIT_FILE_SIZE') {

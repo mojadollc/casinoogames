@@ -47,7 +47,23 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/api', apiLimiter);
 
-app.use('/uploads', express.static(require('path').join(__dirname, 'uploads')));
+// Persistent uploads (logo + game thumbnails). Survives PM2 restart.
+// Deploy scripts MUST exclude this folder from rsync --delete.
+const path = require('path');
+const fs = require('fs');
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads');
+const THUMB_DIR = path.join(UPLOAD_DIR, 'thumbnails');
+for (const dir of [UPLOAD_DIR, THUMB_DIR]) {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+app.use('/uploads', express.static(UPLOAD_DIR, {
+  maxAge: '7d',
+  etag: true,
+  lastModified: true,
+  fallthrough: true,
+}));
+// Expose for other modules
+app.set('UPLOAD_DIR', UPLOAD_DIR);
 
 // ── Routes ───────────────────────────────────────────────────────────────────
 app.use('/api/auth', require('./auth/routes'));

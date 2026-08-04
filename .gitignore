@@ -24,3 +24,7 @@ npm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# User-uploaded assets (logo, thumbnails) — persist on server only
+backend/uploads/
+uploads/

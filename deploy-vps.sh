@@ -151,7 +151,7 @@ rsync_cmd -az --delete \
   --exclude='frontend/dist' \
   --exclude='*.log' \
   --exclude='.env' \
-  --exclude='backend/uploads/*' \
+  --exclude='backend/uploads' --exclude='backend/uploads/**' \
   --exclude='coverage' \
   "$ROOT/" "$VPS_USER@$VPS_IP:$APP_DIR/"
 rsync_cmd -az "$ROOT/.env.production" "$VPS_USER@$VPS_IP:$APP_DIR/.env.production"
@@ -183,7 +183,8 @@ if [ "$NEED_BE" = true ]; then
   ssh_cmd "bash -s" << REMOTE_BE
 set -e
 cd $APP_DIR/backend
-mkdir -p uploads/thumbnails
+mkdir -p backend/uploads/thumbnails uploads/thumbnails
+chmod -R a+rX backend/uploads 2>/dev/null || true
 npm install --omit=dev --silent 2>/dev/null || npm install --omit=dev
 cat > $APP_DIR/ecosystem.config.cjs << 'ECO'
 module.exports = {
