@@ -2,11 +2,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { gameAPI, walletAPI } from '../../services/api';
 import { createSabongArena } from '../../components/webgl/SabongArena.js';
+import {
+  unlockSabongAudio,
+  playBell,
+  playWin,
+  playLose,
+} from '../../components/webgl/SabongSounds.js';
 
-/**
- * Sabong match — animated roosters in arena (Canvas2D + WebGL FX).
- * NOT a slot machine.
- */
 const QUICK = [20, 50, 100, 500, 1000, 5000];
 
 export default function CockFightGame() {
@@ -29,7 +31,6 @@ export default function CockFightGame() {
   const [lastWin, setLastWin] = useState(0);
   const [history, setHistory] = useState([]);
 
-  // Load game + balance
   useEffect(() => {
     walletAPI.balance().then(({ data }) => setBalance(Number(data.balance) || 0)).catch(() => {});
     gameAPI.details(slug).then(({ data }) => {
@@ -38,24 +39,21 @@ export default function CockFightGame() {
     }).catch(() => navigate('/'));
   }, [slug, navigate]);
 
-  // Init arena AFTER canvases are mounted (depends on game so loading screen is gone)
+  // Init arena after game loads so canvas refs exist
   useEffect(() => {
     if (!game) return;
-    // Wait one frame so refs attach to DOM
     let cancelled = false;
     const id = requestAnimationFrame(() => {
       if (cancelled || !arenaRef.current || !fxRef.current) return;
-      // Destroy previous if any
       engineRef.current?.destroy();
       const eng = createSabongArena(arenaRef.current, fxRef.current);
       engineRef.current = eng;
-      const w = Math.min(460, (arenaRef.current.parentElement?.clientWidth) || window.innerWidth - 16);
+      const w = Math.min(460, arenaRef.current.parentElement?.clientWidth || window.innerWidth - 16);
       eng.resize(Math.max(280, w), Math.round(Math.max(280, w) * 0.65));
       eng.setPoses('idle', 'idle');
       eng.start();
       setArenaReady(true);
     });
-
     const onResize = () => {
       const eng = engineRef.current;
       if (!eng || !arenaRef.current) return;
@@ -63,7 +61,6 @@ export default function CockFightGame() {
       eng.resize(Math.max(280, w), Math.round(Math.max(280, w) * 0.65));
     };
     window.addEventListener('resize', onResize);
-
     return () => {
       cancelled = true;
       cancelAnimationFrame(id);
@@ -84,20 +81,17 @@ export default function CockFightGame() {
   const playFight = useCallback(async (winner, rounds = 6) => {
     const eng = engineRef.current;
     if (!eng) return;
-
     eng.setPoses('walk', 'walk');
-    await wait(400);
-
+    await wait(350);
     for (let i = 0; i < rounds; i++) {
       const meronHit = i % 2 === 0;
       eng.setPoses(meronHit ? 'attack' : 'hurt', meronHit ? 'hurt' : 'attack');
+      // impact() also triggers playStrike() sound inside SabongArena
       eng.impact(meronHit ? '#c62828' : '#1565c0');
       await wait(380);
       eng.setPoses('walk', 'walk');
-      await wait(160);
+      await wait(150);
     }
-
-    // Final decisive strike
     if (winner === 'meron') {
       eng.setPoses('attack', 'hurt');
       eng.impact('#c62828');
@@ -119,32 +113,31 @@ export default function CockFightGame() {
   }, []);
 
   const startFight = async () => {
-    if (fighting || !game || balance < bet) return;
-    if (!engineRef.current) {
-      setMessage('Arena still loading — try again in a second');
-      return;
-    }
+    if (fighting || !game || balance < bet || !arenaReady) return;
+    unlockSabongAudio();
     setFighting(true);
     setResult(null);
     setLastWin(0);
     setMessage('Fight in progress…');
+    try { playBell(); } catch (e) {}
 
     try {
       const { data } = await gameAPI.cockfight(game.id, bet, side);
       setBalance(Number(data.balance) || 0);
-
       await playFight(data.winner, data.rounds || 6);
-
       setResult(data);
       setLastWin(Number(data.totalWin) || 0);
       setHistory((prev) => [{ winner: data.winner, side, win: data.totalWin }, ...prev].slice(0, 10));
 
       if (data.isPush) {
         setMessage(`Draw — ₱${Number(data.totalWin).toLocaleString()} stake returned`);
+        try { playBell(); } catch (e) {}
       } else if (data.side === data.winner && data.totalWin > 0) {
         setMessage(`${data.winner.toUpperCase()} wins! You won ₱${Number(data.totalWin).toLocaleString()}`);
+        try { playWin(); } catch (e) {}
       } else {
         setMessage(`${data.winner.toUpperCase()} wins the match`);
+        try { playLose(); } catch (e) {}
       }
     } catch (err) {
       setMessage(err.response?.data?.error || err.message || 'Fight failed');
@@ -173,7 +166,7 @@ export default function CockFightGame() {
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontWeight: 900, color: '#FFD700', fontSize: 14 }}>{game?.name || 'Sabong Arena'}</div>
           <div style={{ fontSize: 10, color: '#8a5', letterSpacing: 1 }}>
-            {arenaReady ? 'LIVE ARENA' : 'LOADING ARENA…'}
+            {arenaReady ? 'LIVE ARENA · SFX ON' : 'LOADING ARENA…'}
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
@@ -182,16 +175,13 @@ export default function CockFightGame() {
         </div>
       </div>
 
-      {/* Always mount canvases so refs exist (even while game loads) */}
       <div style={{
         position: 'relative', margin: '10px 8px', borderRadius: 12, overflow: 'hidden',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.5)', minHeight: 200,
-        background: '#2a1810',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.5)', minHeight: 200, background: '#2a1810',
       }}>
         <canvas ref={arenaRef} style={{ display: 'block', width: '100%', height: 'auto' }} />
         <canvas ref={fxRef} style={{
-          position: 'absolute', left: 0, top: 0, width: '100%', height: '100%',
-          pointerEvents: 'none',
+          position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', pointerEvents: 'none',
         }} />
         {!arenaReady && (
           <div style={{
@@ -230,7 +220,7 @@ export default function CockFightGame() {
             key={s.id}
             type="button"
             disabled={fighting}
-            onClick={() => setSide(s.id)}
+            onClick={() => { unlockSabongAudio(); setSide(s.id); }}
             style={{
               flex: 1, padding: '12px 6px', borderRadius: 12,
               cursor: fighting ? 'not-allowed' : 'pointer',
@@ -267,7 +257,8 @@ export default function CockFightGame() {
       }}>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
           {quick.map((v) => (
-            <button key={v} type="button" onClick={() => setBet(v)} disabled={fighting || v > balance}
+            <button key={v} type="button" onClick={() => { unlockSabongAudio(); setBet(v); }}
+              disabled={fighting || v > balance}
               style={{
                 padding: '8px 12px', borderRadius: 8, fontWeight: 700, fontSize: 12,
                 border: bet === v ? '2px solid #FFD700' : '1px solid #3a2218',

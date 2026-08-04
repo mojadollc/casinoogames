@@ -1,3 +1,4 @@
+import { playStrike } from './SabongSounds.js';
 /**
  * WebGL + Canvas2D Sabong arena renderer.
  * Canvas2D draws animated roosters; WebGL draws dust / impact FX.
@@ -104,22 +105,22 @@ function createParticles(canvas) {
 }
 
 /** Draw a detailed rooster on 2D context at (x,y), facing dir (1 right, -1 left) */
-function drawRooster(ctx, x, y, dir, color, phase, pose, scale = 1.35) {
+function drawRooster(ctx, x, y, dir, color, phase, pose) {
   // pose: idle | walk | attack | hurt | win | lose
   ctx.save();
   ctx.translate(x, y);
-  ctx.scale(dir * scale, scale);
+  ctx.scale(dir, 1);
 
   const t = phase;
   let bodyY = 0, bodyRot = 0, neckRot = 0, legL = 0, legR = 0, wing = 0;
 
   if (pose === 'idle' || pose === 'walk') {
-    bodyY = Math.sin(t * 6) * 4;
-    legL = Math.sin(t * 8) * (pose === 'walk' ? 0.45 : 0.15);
-    legR = Math.sin(t * 8 + Math.PI) * (pose === 'walk' ? 0.45 : 0.15);
+    bodyY = Math.sin(t * 6) * 2;
+    legL = Math.sin(t * 8) * (pose === 'walk' ? 0.35 : 0.08);
+    legR = Math.sin(t * 8 + Math.PI) * (pose === 'walk' ? 0.35 : 0.08);
     wing = Math.sin(t * 5) * 0.08;
   } else if (pose === 'attack') {
-    bodyRot = -0.45; neckRot = -0.65; bodyY = -14;
+    bodyRot = -0.35; neckRot = -0.5; bodyY = -8;
     wing = 0.6;
   } else if (pose === 'hurt') {
     bodyRot = 0.25; neckRot = 0.3; bodyY = 4;
@@ -288,6 +289,7 @@ export function createSabongArena(arenaCanvas, fxCanvas) {
   function impact(winnerColor) {
     const cx = w * 0.5, cy = h * 0.55;
     fx?.burst({ x: cx, y: cy, color: winnerColor || '#FFD700', n: 70, speed: 160 });
+    try { playStrike(1); } catch (e) {}
   }
 
   function drawBg() {
