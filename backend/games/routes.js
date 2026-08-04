@@ -279,27 +279,31 @@ router.post('/:gameId/free-spin', authenticate, async (req, res) => {
 
 // Fishing shoot
 router.post('/:gameId/fishing-shoot', authenticate, async (req, res) => {
-  const { betAmount } = req.body;
+  const betAmount = parseFloat(req.body.betAmount);
   const { gameId } = req.params;
   try {
+    if (!Number.isFinite(betAmount) || betAmount <= 0) {
+      return res.status(400).json({ error: 'Invalid bet amount' });
+    }
     const game = await query("SELECT * FROM games WHERE id = ? AND status = 'active'", [gameId]);
     if (!game.rows[0]) return res.status(404).json({ error: 'Game not found' });
     const g = game.rows[0];
-    if (betAmount < g.min_bet || betAmount > g.max_bet) {
+    if (betAmount < Number(g.min_bet) || betAmount > Number(g.max_bet)) {
       return res.status(400).json({ error: `Bet must be between ${g.min_bet} and ${g.max_bet}` });
     }
 
     const controls = await getGameControls(gameId);
     const rng = new (require('../../game-engine/engine').SecureRNG)();
+    // Weights & multipliers aligned with client catalog for feel
     const FISH = [
-      { name: 'Small Fish',  emoji: '🐟', weight: 35, multiplier: 1.2  },
-      { name: 'Clownfish',   emoji: '🐠', weight: 25, multiplier: 1.5  },
-      { name: 'Blowfish',    emoji: '🐡', weight: 15, multiplier: 2    },
-      { name: 'Shark',       emoji: '🦈', weight: 8,  multiplier: 3    },
-      { name: 'Octopus',     emoji: '🐙', weight: 6,  multiplier: 5    },
-      { name: 'Whale',       emoji: '🐳', weight: 4,  multiplier: 8    },
-      { name: 'Dragon Fish', emoji: '🐲', weight: 2,  multiplier: 15   },
-      { name: 'Golden Fish', emoji: '✨', weight: 1,  multiplier: 30   },
+      { name: 'Sardine',     emoji: '🐟', weight: 38, multiplier: 1.2  },
+      { name: 'Clownfish',   emoji: '🐠', weight: 24, multiplier: 1.5  },
+      { name: 'Blowfish',    emoji: '🐡', weight: 14, multiplier: 2    },
+      { name: 'Shark',       emoji: '🦈', weight: 10, multiplier: 3.5  },
+      { name: 'Whale',       emoji: '🐋', weight: 7,  multiplier: 8    },
+      { name: 'Sea Dragon',  emoji: '🐉', weight: 4,  multiplier: 15   },
+      { name: 'Golden King', emoji: '✨', weight: 2,  multiplier: 25   },
+      { name: 'Ocean Boss',  emoji: '🐲', weight: 1,  multiplier: 50   },
     ];
 
     const winRoll = rng.generate(1, 100);
