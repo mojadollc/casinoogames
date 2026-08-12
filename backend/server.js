@@ -33,9 +33,14 @@ const io = new Server(server, {
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({
   origin: (origin, cb) => {
-    // Allow: no origin (same-origin / mobile apps), or whitelisted domains
-    const allowed = [process.env.FRONTEND_URL, process.env.ADMIN_URL].filter(Boolean);
-    if (!origin || allowed.includes(origin)) return cb(null, true);
+    const allowed = [
+      process.env.FRONTEND_URL,
+      process.env.ADMIN_URL,
+      'https://reelx.lazapee.ph',
+      'http://localhost:3000',
+      'http://localhost:5173',
+    ].filter(Boolean);
+    if (!origin || allowed.some(a => origin.startsWith(a))) return cb(null, true);
     cb(new Error('Not allowed by CORS'));
   },
   credentials: true,

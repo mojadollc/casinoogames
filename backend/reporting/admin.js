@@ -584,7 +584,7 @@ router.get('/roles', adminAuth, async (req, res) => {
   res.json(result.rows);
 });
 
-// Platform settings (logo, etc.)
+// Platform settings (logo, etc.) — PUBLIC, no auth required
 router.get('/settings', async (req, res) => {
   try {
     await query('CREATE TABLE IF NOT EXISTS platform_settings (`key` VARCHAR(100) PRIMARY KEY, value TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)');
