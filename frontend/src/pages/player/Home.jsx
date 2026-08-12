@@ -589,14 +589,15 @@ export default function Home() {
       </div>
 
       {/* Mobile Banner Carousel */}
-      {loading && <BannerSkeleton />}
-      <div className="mobile-banner" style={{ display: loading ? 'none' : undefined }} style={{ margin: '0 16px 16px', padding: '20px', background: `linear-gradient(135deg, #1a0a2e, #2d1b4e)`, borderRadius: '16px', border: `2px solid ${banner.color}`, boxShadow: `0 0 30px ${banner.color}30` }}>
+      {loading ? <BannerSkeleton /> : (
+      <div className="mobile-banner" style={{ margin: '0 16px 16px', padding: '20px', background: `linear-gradient(135deg, #1a0a2e, #2d1b4e)`, borderRadius: '16px', border: `2px solid ${banner.color}`, boxShadow: `0 0 30px ${banner.color}30` }}>
         <div style={{ fontSize: '22px', fontWeight: '900', color: banner.color, marginBottom: '6px' }}>{banner.title}</div>
         <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.8)' }}>{banner.subtitle}</div>
         <div style={{ display: 'flex', gap: '6px', marginTop: '12px' }}>
           {BANNERS.map((_, i) => (<div key={i} style={{ width: i === bannerIndex ? '20px' : '8px', height: '8px', borderRadius: '4px', background: i === bannerIndex ? banner.color : 'rgba(255,255,255,0.3)', transition: 'width 0.3s' }} />))}
         </div>
       </div>
+      )}
 
       {/* Jackpot Counter */}
       {!loading && (

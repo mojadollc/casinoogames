@@ -152,13 +152,15 @@ export default function Wallet() {
   return (
     <div>
       {/* Balance Card */}
-      {walletLoading ? <WalletBalanceSkeleton /> : <div className="balance-card"
-        <p className="label">Total Balance</p>
-        <p className="amount">₱{Number(balance.balance).toLocaleString('en', { minimumFractionDigits: 2 })}</p>
-        {balance.bonus_balance > 0 && (
-          <p className="label">Bonus: ₱{Number(balance.bonus_balance).toFixed(2)}</p>
-        )}
-      </div>}
+      {walletLoading ? <WalletBalanceSkeleton /> : (
+        <div className="balance-card">
+          <p className="label">Total Balance</p>
+          <p className="amount">₱{Number(balance.balance).toLocaleString('en', { minimumFractionDigits: 2 })}</p>
+          {balance.bonus_balance > 0 && (
+            <p className="label">Bonus: ₱{Number(balance.bonus_balance).toFixed(2)}</p>
+          )}
+        </div>
+      )}
 
       {/* Action Buttons */}
       <div className="action-buttons">
