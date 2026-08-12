@@ -20,18 +20,21 @@ async function getGameControls(gameId) {
   let controls;
   if (result.rows[0]) {
     controls = {
-      win_rate: parseFloat(result.rows[0].win_rate),
+      win_rate: parseFloat(result.rows[0].win_rate) || 25,
       force_outcome: result.rows[0].force_outcome || null,
-      min_payout: parseFloat(result.rows[0].min_payout),
-      max_payout: parseFloat(result.rows[0].max_payout),
-      payout_cap: parseFloat(result.rows[0].payout_cap),
+      min_payout: parseFloat(result.rows[0].min_payout) || 0,
+      max_payout: parseFloat(result.rows[0].max_payout) || 0,
+      payout_cap: parseFloat(result.rows[0].payout_cap) || 0,
       dry_run: !!result.rows[0].dry_run,
       player_class_overrides: new Map()
     };
   } else {
-    controls = { win_rate: 25, force_outcome: null, min_payout: 0, max_payout: 30, payout_cap: 0, dry_run: false, player_class_overrides: new Map() };
-    // Insert defaults
-    await query('INSERT IGNORE INTO game_controls (id, game_id, win_rate) VALUES (UUID(), ?, 25)', [gameId]);
+    // No row yet — check if there is a global/default control row
+    const globalResult = await query("SELECT * FROM game_controls WHERE game_id IS NULL OR game_id = '' LIMIT 1");
+    const globalForce = globalResult.rows[0]?.force_outcome || null;
+    controls = { win_rate: 25, force_outcome: globalForce, min_payout: 0, max_payout: 0, payout_cap: 0, dry_run: false, player_class_overrides: new Map() };
+    // Insert defaults for this game so future saves work
+    await query('INSERT IGNORE INTO game_controls (id, game_id, win_rate, force_outcome) VALUES (UUID(), ?, 25, ?)', [gameId, globalForce]);
   }
   gameControlsCache.set(gameId, { data: controls, ts: Date.now() });
   return controls;
@@ -778,14 +781,12 @@ router.put('/bulk/win-rate', authenticate, isAdmin, async (req, res) => {
       targetGameIds = allGames.rows.map(g => g.id);
     }
 
-    // Upsert win_rate for all target games in one loop, then invalidate cache
     for (const gameId of targetGameIds) {
       await query(`
         INSERT INTO game_controls (id, game_id, win_rate, updated_by)
         VALUES (UUID(), ?, ?, ?)
         ON DUPLICATE KEY UPDATE win_rate = VALUES(win_rate), updated_by = VALUES(updated_by), updated_at = NOW()
       `, [gameId, rate, req.user.id]);
-      // Invalidate cache so next read fetches fresh value from DB
       gameControlsCache.delete(gameId);
     }
 
@@ -793,6 +794,38 @@ router.put('/bulk/win-rate', authenticate, isAdmin, async (req, res) => {
       [req.user.id, 'bulk_win_rate_update', 'games', JSON.stringify({ win_rate: rate, updated_count: targetGameIds.length })]);
 
     res.json({ success: true, message: `Win rate set to ${rate}% for ${targetGameIds.length} game(s)`, win_rate: rate, count: targetGameIds.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Bulk force outcome across ALL games
+router.put('/bulk/force-outcome', authenticate, isAdmin, async (req, res) => {
+  try {
+    const { force_outcome, game_ids } = req.body;
+    const outcome = force_outcome || null;
+
+    let targetGameIds = [];
+    if (Array.isArray(game_ids) && game_ids.length > 0) {
+      targetGameIds = game_ids;
+    } else {
+      const allGames = await query("SELECT id FROM games");
+      targetGameIds = allGames.rows.map(g => g.id);
+    }
+
+    for (const gameId of targetGameIds) {
+      await query(`
+        INSERT INTO game_controls (id, game_id, win_rate, force_outcome, updated_by)
+        VALUES (UUID(), ?, 25, ?, ?)
+        ON DUPLICATE KEY UPDATE force_outcome = VALUES(force_outcome), updated_by = VALUES(updated_by), updated_at = NOW()
+      `, [gameId, outcome, req.user.id]);
+      gameControlsCache.delete(gameId);
+    }
+
+    await query('INSERT INTO audit_logs (id, user_id, action, entity, details) VALUES (UUID(), ?, ?, ?, ?)',
+      [req.user.id, 'bulk_force_outcome_update', 'games', JSON.stringify({ force_outcome: outcome, updated_count: targetGameIds.length })]);
+
+    res.json({ success: true, message: `Force outcome set to "${outcome || 'random'}" for ${targetGameIds.length} game(s)`, force_outcome: outcome, count: targetGameIds.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

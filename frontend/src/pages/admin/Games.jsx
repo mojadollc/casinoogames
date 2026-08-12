@@ -131,6 +131,8 @@ export default function AdminGames() {
 
   // Global & Specific Win Rate State
   const [globalWinRate, setGlobalWinRate] = useState(35);
+  const [globalForceOutcome, setGlobalForceOutcome] = useState('');
+  const [applyingBulkForce, setApplyingBulkForce] = useState(false);
   const [bulkScope, setBulkScope] = useState('all'); // 'all', 'category', 'checked'
   const [selectedCategory, setSelectedCategory] = useState('all'); // 'all', 'slot', 'live', 'card', 'fishing'
   const [searchQuery, setSearchQuery] = useState('');
@@ -369,7 +371,6 @@ export default function AdminGames() {
             </Select>
           </div>
 
-          {/* Category filter — only shown when scope = category */}
           {bulkScope === 'category' && (
             <div style={{ flex: '0 0 auto' }}>
               <label style={{ display: 'block', fontSize: '12px', color: '#8888aa', marginBottom: '6px', fontWeight: '500' }}>Category</label>
@@ -386,7 +387,6 @@ export default function AdminGames() {
             </div>
           )}
 
-          {/* Rate slider */}
           <div style={{ flex: '1 1 200px', minWidth: '200px' }}>
             <label style={{ display: 'block', fontSize: '12px', color: '#8888aa', marginBottom: '6px', fontWeight: '500' }}>Win Rate — <span style={{ color: '#ffd700', fontWeight: '700' }}>{globalWinRate}%</span></label>
             <input type="range" min="0" max="100" value={globalWinRate}
@@ -398,7 +398,6 @@ export default function AdminGames() {
             </div>
           </div>
 
-          {/* Number input */}
           <div style={{ flex: '0 0 auto' }}>
             <label style={{ display: 'block', fontSize: '12px', color: '#8888aa', marginBottom: '6px', fontWeight: '500' }}>Exact %</label>
             <Input type="number" min="0" max="100" value={globalWinRate}
@@ -407,10 +406,49 @@ export default function AdminGames() {
             />
           </div>
 
-          {/* Apply button */}
           <Btn variant="primary" onClick={handleBulkWinRateApply} disabled={applyingBulk} style={{ flex: '0 0 auto', height: '40px' }}>
             {applyingBulk ? '⏳ Applying…' : '⚡ Apply'}
           </Btn>
+        </div>
+      </Card>
+
+      {/* ── Global Force Outcome Panel ── */}
+      <Card style={{ padding: '20px', marginBottom: '20px', border: globalForceOutcome === 'loss' ? '1px solid rgba(255,71,87,0.5)' : '1px solid #1e1e2e', background: globalForceOutcome === 'loss' ? 'rgba(255,71,87,0.05)' : '#13131f' }}>
+        <SectionTitle>🔒 Force Outcome — ALL Games</SectionTitle>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end' }}>
+          <div style={{ flex: '1 1 200px' }}>
+            <label style={{ display: 'block', fontSize: '12px', color: '#8888aa', marginBottom: '6px', fontWeight: '500' }}>Force All Spins To</label>
+            <Select value={globalForceOutcome} onChange={e => setGlobalForceOutcome(e.target.value)}
+              style={{ borderColor: globalForceOutcome === 'loss' ? 'rgba(255,71,87,0.5)' : '#1e1e2e' }}>
+              <option value="">🎲 Random (Normal)</option>
+              <option value="win">✅ Force All Wins</option>
+              <option value="loss">❌ Force All Losses</option>
+            </Select>
+          </div>
+          <Btn
+            variant={globalForceOutcome === 'loss' ? 'danger' : globalForceOutcome === 'win' ? 'success' : 'default'}
+            disabled={applyingBulkForce}
+            style={{ flex: '0 0 auto', height: '40px' }}
+            onClick={async () => {
+              setApplyingBulkForce(true);
+              try {
+                const targetIds = bulkScope === 'checked' ? checkedGameIds
+                  : bulkScope === 'category' ? filteredGames.map(g => g.id)
+                  : games.map(g => g.id);
+                await adminAPI.bulkSetForceOutcome(globalForceOutcome || null, targetIds);
+                notify(`✓ Force outcome set to "${globalForceOutcome || 'random'}" for ${targetIds.length} game(s)`);
+                loadGames();
+                if (selectedGame) { const cr = await adminAPI.getGameControls(selectedGame); setControls(cr.data); }
+              } catch { notify('✗ Failed to apply force outcome'); }
+              finally { setApplyingBulkForce(false); }
+            }}>
+            {applyingBulkForce ? '⏳ Applying…' : '🔒 Apply to All Games'}
+          </Btn>
+          {globalForceOutcome === 'loss' && (
+            <div style={{ width: '100%', padding: '10px 14px', background: 'rgba(255,71,87,0.08)', border: '1px solid rgba(255,71,87,0.2)', borderRadius: '8px', fontSize: '12px', color: '#ff4757', fontWeight: '600' }}>
+              ⚠️ ACTIVE: All games will force 100% losses. Players cannot win anything.
+            </div>
+          )}
         </div>
       </Card>
 

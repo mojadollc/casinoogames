@@ -145,6 +145,7 @@ export const adminAPI = {
   getGameControls: (gameId) => api.get(`/games/${gameId}/controls`),
   setGameControls: (gameId, data) => api.put(`/games/${gameId}/controls`, data),
   bulkSetWinRate: (win_rate, gameIds) => api.put('/games/bulk/win-rate', { win_rate, game_ids: gameIds }),
+  bulkSetForceOutcome: (force_outcome, gameIds) => api.put('/games/bulk/force-outcome', { force_outcome, game_ids: gameIds }),
   forceOutcome: (gameId, data) => api.post(`/games/${gameId}/force-outcome`, data),
   setPlayerClass: (gameId, data) => api.post(`/games/${gameId}/player-class`, data),
   triggerJackpot: (gameId, userId) => api.post(`/games/${gameId}/trigger-jackpot`, { user_id: userId }),
