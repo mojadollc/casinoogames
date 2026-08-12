@@ -414,15 +414,19 @@ export default function Home() {
     }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
-  // Tick jackpot — use module-level interval so it never stops between remounts
+  // Tick jackpot down slowly, then reset to a higher value when it hits the floor
   useEffect(() => {
     if (_jackpotInterval) clearInterval(_jackpotInterval);
     _jackpotInterval = setInterval(() => {
-      _jackpotCache += Math.random() * 2.5;
+      _jackpotCache -= Math.random() * 1.5;
+      if (_jackpotCache < 50000) {
+        // Someone "won" — reset to a new higher amount
+        _jackpotCache = 80000 + Math.random() * 50000;
+      }
       sessionStorage.setItem('jackpot', _jackpotCache.toString());
       setJackpot(_jackpotCache);
-    }, 200);
-    return () => {}; // intentionally don't clear on unmount — keeps ticking
+    }, 300);
+    return () => {};
   }, []);
 
   // Fetch balance & setup socket for logged-in users
