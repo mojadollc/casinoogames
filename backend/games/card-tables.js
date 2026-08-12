@@ -30,9 +30,10 @@ async function getGameControls(gameId) {
   return controls;
 }
 async function getSessionWin(userId, gameId) {
+  // Cross-game total — payout cap applies across ALL games in the session
   const r = await query(
-    "SELECT COALESCE(SUM(win_amount),0) as total FROM game_rounds WHERE user_id=? AND game_id=? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)",
-    [userId, gameId]
+    "SELECT COALESCE(SUM(win_amount),0) as total FROM game_rounds WHERE user_id=? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)",
+    [userId]
   );
   return parseFloat(r.rows[0].total) || 0;
 }

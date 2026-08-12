@@ -125,13 +125,21 @@ router.post('/:gameId/spin', authenticate, gameLimiter, async (req, res) => {
       }
     }
 
-    // Session stats for RTP enforcement
+    // Session stats for payout cap — track across ALL games, not just this one
     const sessionStats = await query(
       `SELECT COALESCE(SUM(bet_amount), 0) as total_bet, COALESCE(SUM(win_amount), 0) as total_win, COUNT(*) as spins
        FROM game_rounds WHERE user_id = ? AND game_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)`,
       [req.user.id, gameId]
     );
     const stats = sessionStats.rows[0];
+
+    // Also get cross-game session total for global payout cap enforcement
+    const crossGameStats = await query(
+      `SELECT COALESCE(SUM(win_amount), 0) as total_win FROM game_rounds
+       WHERE user_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)`,
+      [req.user.id]
+    );
+    const crossGameWon = parseFloat(crossGameStats.rows[0].total_win) || 0;
 
     // Load controls from DB (TTL-cached)
     const controls = await getGameControls(gameId);
@@ -177,7 +185,7 @@ router.post('/:gameId/spin', authenticate, gameLimiter, async (req, res) => {
       const engine = new GameEngine(engineConfig, gameSettings);
       result = engine.spin(betAmount, false, {
         totalBet: parseFloat(stats.total_bet) || 0,
-        totalWin: parseFloat(stats.total_win) || 0,
+        totalWin: crossGameWon,  // use cross-game total so payout cap works across all games
         spins: parseInt(stats.spins) || 0
       });
     } catch (spinErr) {
@@ -234,10 +242,9 @@ router.post('/:gameId/spin', authenticate, gameLimiter, async (req, res) => {
       jackpotWin = 0;
     }
 
-    // Clamp win to remaining payout cap allowance
+    // Clamp win to remaining payout cap allowance — uses cross-game total
     if (gameSettings.payout_cap > 0 && result.totalWin > 0) {
-      const alreadyWon = parseFloat(stats.total_win) || 0;
-      const remaining = Math.max(0, gameSettings.payout_cap - alreadyWon);
+      const remaining = Math.max(0, gameSettings.payout_cap - crossGameWon);
       if (remaining <= 0) {
         result.totalWin = 0;
         result.forcedOutcome = 'loss_cap';
@@ -304,11 +311,11 @@ router.post('/:gameId/free-spin', authenticate, gameLimiter, async (req, res) =>
       payout_cap: controls.payout_cap
     };
 
-    // Session stats needed for payout cap
+    // Session stats needed for payout cap — cross-game total
     const sessionStats = await query(
       `SELECT COALESCE(SUM(win_amount), 0) as total_win FROM game_rounds
-       WHERE user_id = ? AND game_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)`,
-      [req.user.id, gameId]
+       WHERE user_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)`,
+      [req.user.id]
     );
     const alreadyWon = parseFloat(sessionStats.rows[0].total_win) || 0;
 
@@ -390,11 +397,11 @@ router.post('/:gameId/fishing-shoot', authenticate, gameLimiter, async (req, res
       if (controls.min_payout > 0 && mult < controls.min_payout) totalWin = parseFloat((betAmount * controls.min_payout).toFixed(2));
       if (controls.max_payout > 0 && mult > controls.max_payout) totalWin = parseFloat((betAmount * controls.max_payout).toFixed(2));
     }
-    // Payout cap — clamp current win to remaining allowance
+    // Payout cap — clamp current win to remaining cross-game allowance
     if (controls.payout_cap > 0 && totalWin > 0) {
       const sessionWin = await query(
-        "SELECT COALESCE(SUM(win_amount), 0) as total FROM game_rounds WHERE user_id = ? AND game_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)",
-        [req.user.id, gameId]
+        "SELECT COALESCE(SUM(win_amount), 0) as total FROM game_rounds WHERE user_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)",
+        [req.user.id]
       );
       const alreadyWon = parseFloat(sessionWin.rows[0].total) || 0;
       const remaining = Math.max(0, controls.payout_cap - alreadyWon);
@@ -610,11 +617,11 @@ router.post('/:gameId/play', authenticate, gameLimiter, async (req, res) => {
       if (controls.min_payout > 0 && mult < controls.min_payout) totalWin = parseFloat((amount * controls.min_payout).toFixed(2));
       if (controls.max_payout > 0 && mult > controls.max_payout) totalWin = parseFloat((amount * controls.max_payout).toFixed(2));
     }
-    // Payout cap — clamp current win to remaining allowance
+    // Payout cap — clamp current win to remaining cross-game allowance
     if (controls.payout_cap > 0 && totalWin > 0) {
       const sessionWin = await query(
-        "SELECT COALESCE(SUM(win_amount), 0) as total FROM game_rounds WHERE user_id = ? AND game_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)",
-        [req.user.id, gameId]
+        "SELECT COALESCE(SUM(win_amount), 0) as total FROM game_rounds WHERE user_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)",
+        [req.user.id]
       );
       const alreadyWon = parseFloat(sessionWin.rows[0].total) || 0;
       const remaining = Math.max(0, controls.payout_cap - alreadyWon);
@@ -1040,11 +1047,11 @@ router.post('/:gameId/cockfight', authenticate, gameLimiter, async (req, res) =>
       if (controls.min_payout > 0 && mult < controls.min_payout) totalWin = parseFloat((betAmount * controls.min_payout).toFixed(2));
       if (controls.max_payout > 0 && mult > controls.max_payout) totalWin = parseFloat((betAmount * controls.max_payout).toFixed(2));
     }
-    // Payout cap — clamp current win to remaining allowance
+    // Payout cap — clamp current win to remaining cross-game allowance
     if (controls.payout_cap > 0 && totalWin > 0) {
       const sessionWin = await query(
-        "SELECT COALESCE(SUM(win_amount), 0) as total FROM game_rounds WHERE user_id = ? AND game_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)",
-        [req.user.id, gameId]
+        "SELECT COALESCE(SUM(win_amount), 0) as total FROM game_rounds WHERE user_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)",
+        [req.user.id]
       );
       const alreadyWon = parseFloat(sessionWin.rows[0].total) || 0;
       const remaining = Math.max(0, controls.payout_cap - alreadyWon);
