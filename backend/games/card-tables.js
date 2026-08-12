@@ -6,6 +6,46 @@ const { v4: uuidv4 } = require('uuid');
 const { debitWallet, creditWallet } = require('../wallet/routes');
 const { query } = require('../config/database');
 
+// ── Admin controls helper (shared with routes.js) ────────────────────────────
+const gameControlsCache = new Map();
+const CACHE_TTL = 10 * 1000;
+async function getGameControls(gameId) {
+  const cached = gameControlsCache.get(gameId);
+  if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.data;
+  const result = await query('SELECT * FROM game_controls WHERE game_id = ?', [gameId]);
+  let controls;
+  if (result.rows[0]) {
+    controls = {
+      force_outcome: result.rows[0].force_outcome || null,
+      max_payout: parseFloat(result.rows[0].max_payout) || 0,
+      payout_cap: parseFloat(result.rows[0].payout_cap) || 0,
+    };
+  } else {
+    controls = { force_outcome: null, max_payout: 0, payout_cap: 0 };
+  }
+  gameControlsCache.set(gameId, { data: controls, ts: Date.now() });
+  return controls;
+}
+async function getSessionWin(userId, gameId) {
+  const r = await query(
+    "SELECT COALESCE(SUM(win_amount),0) as total FROM game_rounds WHERE user_id=? AND game_id=? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)",
+    [userId, gameId]
+  );
+  return parseFloat(r.rows[0].total) || 0;
+}
+function clampPayout(payout, betAmount, controls, alreadyWon) {
+  if (controls.force_outcome === 'loss') return 0;
+  let win = payout;
+  if (controls.max_payout > 0 && win > betAmount * controls.max_payout)
+    win = parseFloat((betAmount * controls.max_payout).toFixed(2));
+  if (controls.payout_cap > 0) {
+    const remaining = Math.max(0, controls.payout_cap - alreadyWon);
+    if (remaining <= 0) return 0;
+    if (win > remaining) win = parseFloat(remaining.toFixed(2));
+  }
+  return win;
+}
+
 const SUITS = ['hearts', 'diamonds', 'clubs', 'spades'];
 const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 
@@ -443,33 +483,40 @@ async function settleBlackjack(tableId) {
   table.phase = 'payout';
   const dealerVal = handValue(table.dealerHand);
   const dealerBJ = isBlackjack(table.dealerHand);
+  const controls = await getGameControls(table.gameId);
 
   for (const seat of table.seats) {
     if (!seat.bet) continue;
     const pVal = handValue(seat.hand);
     const pBJ = isBlackjack(seat.hand);
 
-    if (seat.status === 'bust') {
+    if (seat.status === 'bust' || controls.force_outcome === 'loss') {
       seat.result = 'lose';
       seat.lastPayout = 0;
+      seat.status = 'done';
+      await query(
+        'INSERT INTO game_rounds (id, game_id, user_id, bet_amount, win_amount, result, rng_seed) VALUES (UUID(),?,?,?,?,?,?)',
+        [table.gameId, seat.userId, seat.bet, 0, JSON.stringify({ result: 'lose', forced: controls.force_outcome, multiplayer: true }), 'card-mp']
+      ).catch(() => {});
       continue;
     }
 
-    let payout = 0;
+    let rawPayout = 0;
     let result = 'lose';
     if (pBJ && !dealerBJ) {
       result = 'blackjack';
-      payout = parseFloat((seat.bet * 2.5).toFixed(2)); // 3:2 incl stake return style
+      rawPayout = parseFloat((seat.bet * 2.5).toFixed(2));
     } else if (dealerVal > 21 || pVal > dealerVal) {
       result = 'win';
-      payout = parseFloat((seat.bet * 2).toFixed(2));
+      rawPayout = parseFloat((seat.bet * 2).toFixed(2));
     } else if (pVal === dealerVal) {
       result = 'push';
-      payout = seat.bet; // refund
-    } else {
-      result = 'lose';
-      payout = 0;
+      rawPayout = seat.bet;
     }
+
+    const alreadyWon = await getSessionWin(seat.userId, table.gameId);
+    const payout = clampPayout(rawPayout, seat.bet, controls, alreadyWon);
+
     seat.result = result;
     seat.lastPayout = payout;
     seat.status = 'done';
@@ -552,20 +599,27 @@ async function settleSideGame(tableId) {
   table.message = `Result: ${outcomeSide.toUpperCase()}`;
   table.sideOutcome = outcomeSide;
 
+  const controls = await getGameControls(table.gameId);
+
   for (const seat of table.seats) {
     if (!seat.bet || !seat.side) continue;
-    let payout = 0;
+    let rawPayout = 0;
     let result = 'lose';
-    if (seat.side === outcomeSide) {
-      result = 'win';
-      // tie pays 8:1 on baccarat-style, else 1:1
-      const mult = outcomeSide === 'tie' ? 9 : (seat.side === 'banker' ? 1.95 : 2);
-      payout = parseFloat((seat.bet * mult).toFixed(2));
-    } else if (outcomeSide === 'tie' && table.mode === 'baccarat' && (seat.side === 'player' || seat.side === 'banker')) {
-      // classic: player/banker bets push on tie
-      result = 'push';
-      payout = seat.bet;
+
+    if (controls.force_outcome !== 'loss') {
+      if (seat.side === outcomeSide) {
+        result = 'win';
+        const mult = outcomeSide === 'tie' ? 9 : (seat.side === 'banker' ? 1.95 : 2);
+        rawPayout = parseFloat((seat.bet * mult).toFixed(2));
+      } else if (outcomeSide === 'tie' && table.mode === 'baccarat' && (seat.side === 'player' || seat.side === 'banker')) {
+        result = 'push';
+        rawPayout = seat.bet;
+      }
     }
+
+    const alreadyWon = await getSessionWin(seat.userId, table.gameId);
+    const payout = clampPayout(rawPayout, seat.bet, controls, alreadyWon);
+
     seat.result = result;
     seat.lastPayout = payout;
     seat.status = 'done';

@@ -445,13 +445,13 @@ router.post('/:gameId/play', authenticate, gameLimiter, async (req, res) => {
       }
     }
 
-    // Per-player forced outcome queue
+    // Per-player forced outcome queue — global loss cannot be overridden
     const playerForces = await query(
       "SELECT * FROM forced_outcomes WHERE user_id = ? AND game_id = ? AND used = 0 ORDER BY created_at LIMIT 1",
       [req.user.id, gameId]
     );
     let forceOutcome = controls.force_outcome;
-    if (playerForces.rows[0]) forceOutcome = playerForces.rows[0].outcome;
+    if (controls.force_outcome !== 'loss' && playerForces.rows[0]) forceOutcome = playerForces.rows[0].outcome;
 
     const { SecureRNG } = require('../../game-engine/engine');
     const rng = new SecureRNG();
