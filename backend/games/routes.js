@@ -316,10 +316,18 @@ router.post('/:gameId/fishing-shoot', authenticate, gameLimiter, async (req, res
       hit = true;
     }
 
-    // Apply max payout cap from admin controls
-    if (totalWin > 0 && controls.max_payout > 0) {
+    // Apply min/max payout and session payout cap
+    if (totalWin > 0) {
       const mult = totalWin / betAmount;
-      if (mult > controls.max_payout) totalWin = parseFloat((betAmount * controls.max_payout).toFixed(2));
+      if (controls.min_payout > 0 && mult < controls.min_payout) totalWin = parseFloat((betAmount * controls.min_payout).toFixed(2));
+      if (controls.max_payout > 0 && mult > controls.max_payout) totalWin = parseFloat((betAmount * controls.max_payout).toFixed(2));
+    }
+    if (controls.payout_cap > 0) {
+      const sessionWin = await query(
+        "SELECT COALESCE(SUM(win_amount), 0) as total FROM game_rounds WHERE user_id = ? AND game_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)",
+        [req.user.id, gameId]
+      );
+      if (parseFloat(sessionWin.rows[0].total) >= controls.payout_cap) totalWin = 0;
     }
 
     if (!controls.dry_run) {
@@ -521,13 +529,21 @@ router.post('/:gameId/play', authenticate, gameLimiter, async (req, res) => {
       resultPayload = { ...resultPayload, outcome, playerHand, dealerHand };
     }
 
-    // Payout caps
-    if (totalWin > 0 && controls.max_payout > 0) {
+    // Apply min/max payout and session payout cap
+    if (totalWin > 0) {
       const mult = totalWin / amount;
-      if (mult > controls.max_payout) totalWin = parseFloat((amount * controls.max_payout).toFixed(2));
+      if (controls.min_payout > 0 && mult < controls.min_payout) totalWin = parseFloat((amount * controls.min_payout).toFixed(2));
+      if (controls.max_payout > 0 && mult > controls.max_payout) totalWin = parseFloat((amount * controls.max_payout).toFixed(2));
+    }
+    if (controls.payout_cap > 0) {
+      const sessionWin = await query(
+        "SELECT COALESCE(SUM(win_amount), 0) as total FROM game_rounds WHERE user_id = ? AND game_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)",
+        [req.user.id, gameId]
+      );
+      if (parseFloat(sessionWin.rows[0].total) >= controls.payout_cap) totalWin = 0;
     }
     if (playerClass === 'vip' && totalWin > amount) {
-      totalWin = parseFloat((totalWin * 1.05).toFixed(2)); // small VIP bonus on wins
+      totalWin = parseFloat((totalWin * 1.05).toFixed(2));
     }
 
     // Stake amount for debit: for sicbo use sum of bets if provided
@@ -902,12 +918,18 @@ router.post('/:gameId/cockfight', authenticate, gameLimiter, async (req, res) =>
       totalWin = betAmount;
     }
 
-    // Max payout cap (multiplier)
-    if (totalWin > 0 && controls.max_payout > 0) {
+    // Apply min/max payout and session payout cap
+    if (totalWin > 0) {
       const mult = totalWin / betAmount;
-      if (mult > controls.max_payout) {
-        totalWin = parseFloat((betAmount * controls.max_payout).toFixed(2));
-      }
+      if (controls.min_payout > 0 && mult < controls.min_payout) totalWin = parseFloat((betAmount * controls.min_payout).toFixed(2));
+      if (controls.max_payout > 0 && mult > controls.max_payout) totalWin = parseFloat((betAmount * controls.max_payout).toFixed(2));
+    }
+    if (controls.payout_cap > 0) {
+      const sessionWin = await query(
+        "SELECT COALESCE(SUM(win_amount), 0) as total FROM game_rounds WHERE user_id = ? AND game_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)",
+        [req.user.id, gameId]
+      );
+      if (parseFloat(sessionWin.rows[0].total) >= controls.payout_cap) totalWin = 0;
     }
 
     if (!controls.dry_run) {
