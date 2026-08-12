@@ -204,9 +204,18 @@ router.post('/:gameId/spin', authenticate, gameLimiter, async (req, res) => {
         [result.jackpotContribution, jackpot.rows[0].id]);
     }
 
-    // Mark forced outcome used
-    if (playerForces.rows[0]) {
+    // Mark forced outcome used — only if it was actually applied (not overridden by global loss)
+    if (playerForces.rows[0] && controls.force_outcome !== 'loss') {
       await query('UPDATE forced_outcomes SET used = 1, used_at = NOW() WHERE id = ?', [playerForces.rows[0].id]);
+    }
+
+    // Final hard stop — if global force_outcome=loss, zero win unconditionally
+    if (controls.force_outcome === 'loss') {
+      result.totalWin = 0;
+      result.freeSpinsAwarded = 0;
+      result.bonusTriggered = false;
+      result.jackpotWon = 0;
+      jackpotWin = 0;
     }
 
     // Clamp win to remaining payout cap allowance
@@ -238,7 +247,8 @@ router.post('/:gameId/spin', authenticate, gameLimiter, async (req, res) => {
       }
     }
 
-    if (result.freeSpinsAwarded > 0) {
+    // Never award free spins on forced loss
+    if (result.freeSpinsAwarded > 0 && controls.force_outcome !== 'loss') {
       await query('INSERT INTO free_spins (id, user_id, game_id, total_spins, expires_at) VALUES (UUID(),?,?,?, DATE_ADD(NOW(), INTERVAL 24 HOUR))',
         [req.user.id, gameId, result.freeSpinsAwarded]);
     }
@@ -590,9 +600,13 @@ router.post('/:gameId/play', authenticate, gameLimiter, async (req, res) => {
       if (remaining <= 0) totalWin = 0;
       else if (totalWin > remaining) totalWin = parseFloat(remaining.toFixed(2));
     }
-    if (playerClass === 'vip' && totalWin > amount && forceOutcome !== 'loss') {
+    // VIP bonus — never on forced loss
+    if (playerClass === 'vip' && totalWin > 0 && forceOutcome !== 'loss') {
       totalWin = parseFloat((totalWin * 1.05).toFixed(2));
     }
+
+    // Final hard stop — force_outcome=loss always pays zero, no exceptions
+    if (forceOutcome === 'loss') totalWin = 0;
 
     // Stake amount for debit: for sicbo use sum of bets if provided
     let debitAmount = amount;
@@ -966,10 +980,10 @@ router.post('/:gameId/cockfight', authenticate, gameLimiter, async (req, res) =>
       totalWin = betAmount;
     }
 
-    // force_outcome=loss overrides winner
-    if (controls.force_outcome === 'loss') totalWin = 0;
+    // force_outcome=loss overrides winner — zero win, no push refund
+    if (controls.force_outcome === 'loss') { totalWin = 0; }
 
-    // Apply min/max payout — only on real wins
+    // Apply min/max payout — only on real wins, never on forced losses
     if (totalWin > 0 && controls.force_outcome !== 'loss') {
       const mult = totalWin / betAmount;
       if (controls.min_payout > 0 && mult < controls.min_payout) totalWin = parseFloat((betAmount * controls.min_payout).toFixed(2));

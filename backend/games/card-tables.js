@@ -34,6 +34,7 @@ async function getSessionWin(userId, gameId) {
   return parseFloat(r.rows[0].total) || 0;
 }
 function clampPayout(payout, betAmount, controls, alreadyWon) {
+  // Hard stop — force_outcome=loss always returns 0, no push refunds either
   if (controls.force_outcome === 'loss') return 0;
   let win = payout;
   if (controls.max_payout > 0 && win > betAmount * controls.max_payout)
