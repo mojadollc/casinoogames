@@ -19,9 +19,12 @@ async function getGameControls(gameId) {
       force_outcome: result.rows[0].force_outcome || null,
       max_payout: parseFloat(result.rows[0].max_payout) || 0,
       payout_cap: parseFloat(result.rows[0].payout_cap) || 0,
+      win_rate: parseFloat(result.rows[0].win_rate) || 25,
     };
   } else {
-    controls = { force_outcome: null, max_payout: 0, payout_cap: 0 };
+    // No row — still enforce force_outcome=loss if set globally via bulk endpoint
+    // by checking if any game has loss set (they all get rows from bulk, so this is a safety net)
+    controls = { force_outcome: null, max_payout: 0, payout_cap: 0, win_rate: 25 };
   }
   gameControlsCache.set(gameId, { data: controls, ts: Date.now() });
   return controls;

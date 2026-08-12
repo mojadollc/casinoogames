@@ -75,17 +75,20 @@ router.get('/jackpots/total', async (req, res) => {
 });
 
     // admin/games endpoint returns win_rate from game_controls joined to games
-    // Bug fix: games list API doesn't include win_rate — add it to the games query
 router.get('/', async (req, res) => {
-  const result = await query(`
-    SELECT g.id, g.name, g.slug, g.type, g.rtp, g.min_bet, g.max_bet, g.config, g.thumbnail_url,
-           COALESCE(gc.win_rate, 25) as win_rate,
-           gc.force_outcome
-    FROM games g
-    LEFT JOIN game_controls gc ON gc.game_id = g.id
-    WHERE g.status = 'active'
-  `);
-  res.json(result.rows);
+  try {
+    const result = await query(`
+      SELECT g.id, g.name, g.slug, g.type, g.rtp, g.min_bet, g.max_bet, g.config, g.thumbnail_url,
+             COALESCE(gc.win_rate, 25) as win_rate,
+             gc.force_outcome
+      FROM games g
+      LEFT JOIN game_controls gc ON gc.game_id = g.id
+      WHERE g.status = 'active'
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Get game details
