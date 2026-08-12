@@ -268,7 +268,7 @@ class GameEngine {
       grid = this.generateLosingGrid();
       forcedOutcome = 'loss_forced';
     }
-    // Payout cap — force loss if session total already hit the cap
+    // Payout cap — force loss if session total already hit or exceeded the cap
     else if (this.settings.payoutCap > 0 && sessionStats.totalWin >= this.settings.payoutCap) {
       grid = this.generateLosingGrid();
       forcedOutcome = 'loss_cap';

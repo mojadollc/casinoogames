@@ -202,6 +202,18 @@ router.post('/:gameId/spin', authenticate, gameLimiter, async (req, res) => {
       await query('UPDATE forced_outcomes SET used = 1, used_at = NOW() WHERE id = ?', [playerForces.rows[0].id]);
     }
 
+    // Clamp win to remaining payout cap allowance
+    if (gameSettings.payout_cap > 0 && result.totalWin > 0) {
+      const alreadyWon = parseFloat(stats.total_win) || 0;
+      const remaining = Math.max(0, gameSettings.payout_cap - alreadyWon);
+      if (remaining <= 0) {
+        result.totalWin = 0;
+        result.forcedOutcome = 'loss_cap';
+      } else if (result.totalWin > remaining) {
+        result.totalWin = parseFloat(remaining.toFixed(2));
+      }
+    }
+
     if (result.totalWin > 0 && !gameSettings.dry_run) {
       await creditWallet(req.user.id, result.totalWin, 'win', `Win on ${g.name}`, gameId);
     }
