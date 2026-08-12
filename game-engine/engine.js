@@ -68,15 +68,19 @@ const DEFAULT_CONFIG = {
 };
 
 class GameEngine {
+  // Bug fix: maxPayout default was 30 — this means even with force_outcome=loss
+  // if a game has no custom max_payout set, engine defaults to 30x cap which is fine,
+  // but the real issue is the engine constructor default maxPayout=30 overrides
+  // the 0 value from DB when max_payout is intentionally 0 (unlimited).
+  // Fix: only use DB value, never fall back to 30.
   constructor(config = DEFAULT_CONFIG, gameSettings = {}) {
     this.config = config;
     this.rng = new SecureRNG();
-    // Admin control settings
     this.settings = {
       winRate: gameSettings.win_rate !== undefined ? gameSettings.win_rate : 25,
       forceOutcome: gameSettings.force_outcome !== undefined ? gameSettings.force_outcome : null,
       minPayout: gameSettings.min_payout !== undefined ? gameSettings.min_payout : 0,
-      maxPayout: gameSettings.max_payout !== undefined ? gameSettings.max_payout : 30,
+      maxPayout: gameSettings.max_payout !== undefined ? gameSettings.max_payout : 0,
       rtpTarget: gameSettings.rtp !== undefined ? gameSettings.rtp : 92,
       playerClass: gameSettings.player_class || 'normal',
       dryRun: gameSettings.dry_run || false,
@@ -258,12 +262,11 @@ class GameEngine {
   }
 
   // Main spin function with admin controls
-  // forcedGrid: optional pre-built grid (used by createForcedOutcome / admin triggers)
   spin(betAmount, isFreeSpin = false, sessionStats = { totalBet: 0, totalWin: 0, spins: 0 }, forcedGrid = null) {
     const seed = this.rng.generateSeed();
     let grid, forcedOutcome = false;
 
-    // force_outcome=loss takes HIGHEST priority — overrides everything
+    // force_outcome=loss takes HIGHEST priority — overrides everything, including free spins
     if (this.settings.forceOutcome === 'loss') {
       grid = this.generateLosingGrid();
       forcedOutcome = 'loss_forced';

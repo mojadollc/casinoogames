@@ -74,9 +74,17 @@ router.get('/jackpots/total', async (req, res) => {
   }
 });
 
-// Get available games
+    // admin/games endpoint returns win_rate from game_controls joined to games
+    // Bug fix: games list API doesn't include win_rate — add it to the games query
 router.get('/', async (req, res) => {
-  const result = await query("SELECT id, name, slug, type, rtp, min_bet, max_bet, config, thumbnail_url FROM games WHERE status = 'active'");
+  const result = await query(`
+    SELECT g.id, g.name, g.slug, g.type, g.rtp, g.min_bet, g.max_bet, g.config, g.thumbnail_url,
+           COALESCE(gc.win_rate, 25) as win_rate,
+           gc.force_outcome
+    FROM games g
+    LEFT JOIN game_controls gc ON gc.game_id = g.id
+    WHERE g.status = 'active'
+  `);
   res.json(result.rows);
 });
 
@@ -187,7 +195,9 @@ router.post('/:gameId/spin', authenticate, gameLimiter, async (req, res) => {
     // Jackpot — never awarded on forced loss
     const jackpot = await query("SELECT * FROM jackpots WHERE game_id = ? AND status = 'active'", [gameId]);
     let jackpotWin = 0;
-    const isSpinForcedLoss = result.forcedOutcome === 'loss_forced' || result.forcedOutcome === 'loss_cap';
+    // Use controls.force_outcome (global) not forcedOutcome (which could be per-player)
+    const isGlobalForceLoss = controls.force_outcome === 'loss';
+    const isSpinForcedLoss = isGlobalForceLoss || result.forcedOutcome === 'loss_forced' || result.forcedOutcome === 'loss_cap';
     if (jackpot.rows[0] && !isSpinForcedLoss) {
       jackpotWin = engine.checkJackpot(parseFloat(jackpot.rows[0].current_amount));
       if (jackpotWin > 0) {
@@ -301,6 +311,11 @@ router.post('/:gameId/free-spin', authenticate, gameLimiter, async (req, res) =>
 
     const engine = new GameEngine(game.rows[0].config?.symbols ? game.rows[0].config : undefined, gameSettings);
     const result = engine.spin(game.rows[0].min_bet, true, { totalBet: 0, totalWin: alreadyWon, spins: 0 });
+
+    // Free spin — force_outcome=loss must also zero the win here (engine handles it
+    // but free-spin route passes force_outcome through gameSettings so engine does it)
+    // Extra hard stop in case engine result leaks through
+    if (controls.force_outcome === 'loss') result.totalWin = 0;
 
     // Clamp free spin win to remaining payout cap
     if (controls.payout_cap > 0 && result.totalWin > 0) {
