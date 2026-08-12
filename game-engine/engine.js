@@ -263,16 +263,20 @@ class GameEngine {
     const seed = this.rng.generateSeed();
     let grid, forcedOutcome = false;
 
-    // If a grid was pre-built (admin force / createForcedOutcome), use it
-    if (forcedGrid) {
-      grid = forcedGrid;
-      forcedOutcome = 'admin_forced';
+    // force_outcome=loss takes HIGHEST priority — overrides everything
+    if (this.settings.forceOutcome === 'loss') {
+      grid = this.generateLosingGrid();
+      forcedOutcome = 'loss_forced';
     }
-    // Check payout cap
+    // Payout cap — force loss if session total already hit the cap
     else if (this.settings.payoutCap > 0 && sessionStats.totalWin >= this.settings.payoutCap) {
-      // Force loss after cap reached
       grid = this.generateLosingGrid();
       forcedOutcome = 'loss_cap';
+    }
+    // Pre-built grid (admin jackpot trigger)
+    else if (forcedGrid) {
+      grid = forcedGrid;
+      forcedOutcome = 'admin_forced';
     }
     // Check forced outcome from admin
     else if (this.settings.forceOutcome === 'win' || this.settings.forceOutcome === 'big_win') {
@@ -286,10 +290,6 @@ class GameEngine {
         }
       }
       forcedOutcome = this.settings.forceOutcome === 'big_win' ? 'big_win_forced' : 'win_forced';
-    }
-    else if (this.settings.forceOutcome === 'loss') {
-      grid = this.generateLosingGrid();
-      forcedOutcome = 'loss_forced';
     }
     else if (this.settings.forceOutcome === 'jackpot') {
       // Force jackpot symbols (all wilds)
@@ -327,16 +327,16 @@ class GameEngine {
     const paylineWins = this.evaluatePaylines(grid);
     const scatters = this.detectScatters(grid);
 
-    // If forced loss, zero out any accidental wins from the grid
     const isForceLoss = forcedOutcome === 'loss_forced' || forcedOutcome === 'loss_cap';
 
+    // Forced loss = zero win, no exceptions
     let totalWin = isForceLoss ? 0 : paylineWins.reduce((sum, w) => sum + (w.payout * betAmount), 0);
     let freeSpinsAwarded = 0;
 
-    // Apply min/max payout limits
-    if (totalWin > 0) {
+    // Apply min/max payout — ONLY on real wins, never on forced losses
+    if (totalWin > 0 && !isForceLoss) {
       const payoutMultiplier = totalWin / betAmount;
-      if (payoutMultiplier < this.settings.minPayout) {
+      if (this.settings.minPayout > 0 && payoutMultiplier < this.settings.minPayout) {
         totalWin = betAmount * this.settings.minPayout;
       }
       if (this.settings.maxPayout > 0 && payoutMultiplier > this.settings.maxPayout) {
@@ -351,14 +351,14 @@ class GameEngine {
       freeSpinsAwarded = this.config.freeSpinsAwarded;
     }
 
-    // Free spin multiplier
-    if (isFreeSpin) {
+    // Free spin multiplier — not on forced loss
+    if (isFreeSpin && !isForceLoss) {
       totalWin *= this.config.bonusMultiplier;
     }
 
-    // Player class bonus
-    if (this.settings.playerClass === 'vip' && totalWin > 0) {
-      totalWin *= 1.1; // 10% VIP bonus
+    // VIP bonus — not on forced loss
+    if (this.settings.playerClass === 'vip' && totalWin > 0 && !isForceLoss) {
+      totalWin *= 1.1;
     }
 
     // Jackpot contribution

@@ -316,22 +316,23 @@ router.post('/:gameId/fishing-shoot', authenticate, gameLimiter, async (req, res
       hit = true;
     }
 
-    // Apply min/max payout and session payout cap
+    // force_outcome=loss overrides hit result
+    if (controls.force_outcome === 'loss') { totalWin = 0; hit = false; fish = null; }
+
+    // Apply min/max payout — only on real wins
     if (totalWin > 0) {
       const mult = totalWin / betAmount;
       if (controls.min_payout > 0 && mult < controls.min_payout) totalWin = parseFloat((betAmount * controls.min_payout).toFixed(2));
       if (controls.max_payout > 0 && mult > controls.max_payout) totalWin = parseFloat((betAmount * controls.max_payout).toFixed(2));
     }
+    // Payout cap
     if (controls.payout_cap > 0) {
       const sessionWin = await query(
         "SELECT COALESCE(SUM(win_amount), 0) as total FROM game_rounds WHERE user_id = ? AND game_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)",
         [req.user.id, gameId]
       );
-      if (parseFloat(sessionWin.rows[0].total) >= controls.payout_cap) totalWin = 0;
+      if (parseFloat(sessionWin.rows[0].total) >= controls.payout_cap) { totalWin = 0; hit = false; }
     }
-
-    if (!controls.dry_run) {
-      await debitWallet(req.user.id, betAmount, 'bet', `Fishing shot on ${g.name}`, gameId);
       if (totalWin > 0) await creditWallet(req.user.id, totalWin, 'win', `Fishing win on ${g.name}`, gameId);
     }
 
@@ -529,12 +530,17 @@ router.post('/:gameId/play', authenticate, gameLimiter, async (req, res) => {
       resultPayload = { ...resultPayload, outcome, playerHand, dealerHand };
     }
 
-    // Apply min/max payout and session payout cap
-    if (totalWin > 0) {
+    // force_outcome=loss overrides everything — zero win, no min_payout boost
+    if (forceOutcome === 'loss') totalWin = 0;
+
+    // Apply min/max payout — only on real wins, never on forced losses
+    const isForcedLoss = forceOutcome === 'loss' || totalWin === 0;
+    if (totalWin > 0 && !isForcedLoss) {
       const mult = totalWin / amount;
       if (controls.min_payout > 0 && mult < controls.min_payout) totalWin = parseFloat((amount * controls.min_payout).toFixed(2));
       if (controls.max_payout > 0 && mult > controls.max_payout) totalWin = parseFloat((amount * controls.max_payout).toFixed(2));
     }
+    // Payout cap — force loss if session total already hit the cap
     if (controls.payout_cap > 0) {
       const sessionWin = await query(
         "SELECT COALESCE(SUM(win_amount), 0) as total FROM game_rounds WHERE user_id = ? AND game_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)",
@@ -542,7 +548,7 @@ router.post('/:gameId/play', authenticate, gameLimiter, async (req, res) => {
       );
       if (parseFloat(sessionWin.rows[0].total) >= controls.payout_cap) totalWin = 0;
     }
-    if (playerClass === 'vip' && totalWin > amount) {
+    if (playerClass === 'vip' && totalWin > amount && forceOutcome !== 'loss') {
       totalWin = parseFloat((totalWin * 1.05).toFixed(2));
     }
 
@@ -918,12 +924,16 @@ router.post('/:gameId/cockfight', authenticate, gameLimiter, async (req, res) =>
       totalWin = betAmount;
     }
 
-    // Apply min/max payout and session payout cap
+    // force_outcome=loss overrides winner
+    if (controls.force_outcome === 'loss') totalWin = 0;
+
+    // Apply min/max payout — only on real wins
     if (totalWin > 0) {
       const mult = totalWin / betAmount;
       if (controls.min_payout > 0 && mult < controls.min_payout) totalWin = parseFloat((betAmount * controls.min_payout).toFixed(2));
       if (controls.max_payout > 0 && mult > controls.max_payout) totalWin = parseFloat((betAmount * controls.max_payout).toFixed(2));
     }
+    // Payout cap
     if (controls.payout_cap > 0) {
       const sessionWin = await query(
         "SELECT COALESCE(SUM(win_amount), 0) as total FROM game_rounds WHERE user_id = ? AND game_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)",
@@ -933,7 +943,6 @@ router.post('/:gameId/cockfight', authenticate, gameLimiter, async (req, res) =>
     }
 
     if (!controls.dry_run) {
-      await debitWallet(req.user.id, betAmount, 'bet', `Cockfight ${side} on ${g.name}`, gameId);
       if (totalWin > 0) {
         await creditWallet(req.user.id, totalWin, 'win', `Cockfight ${winner} on ${g.name}`, gameId);
       }
