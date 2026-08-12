@@ -16,6 +16,14 @@ export default function Profile() {
   const [copied, setCopied] = useState(false);
   const [affLoading, setAffLoading] = useState(false);
 
+  // Change password state
+  const [pwForm, setPwForm] = useState({ current_password: '', new_password: '', confirm_password: '' });
+  const [pwLoading, setPwLoading] = useState(false);
+
+  // Change email state
+  const [emailForm, setEmailForm] = useState({ email: '', password: '' });
+  const [emailLoading, setEmailLoading] = useState(false);
+
   useEffect(() => {
     if (user?.responsible_gaming) {
       setLimits({
@@ -36,6 +44,39 @@ export default function Profile() {
       ]).finally(() => setAffLoading(false));
     }
   }, [tab]);
+
+  const changePassword = async () => {
+    if (pwForm.new_password !== pwForm.confirm_password) {
+      setMessage('New passwords do not match'); return;
+    }
+    if (pwForm.new_password.length < 8) {
+      setMessage('New password must be at least 8 characters'); return;
+    }
+    setPwLoading(true);
+    try {
+      await authAPI.changePassword(pwForm.current_password, pwForm.new_password);
+      setMessage('✅ Password changed successfully');
+      setPwForm({ current_password: '', new_password: '', confirm_password: '' });
+    } catch (err) {
+      setMessage(err.response?.data?.error || 'Failed to change password');
+    }
+    setPwLoading(false);
+  };
+
+  const changeEmail = async () => {
+    setPwLoading(true);
+    setEmailLoading(true);
+    try {
+      await authAPI.changeEmail(emailForm.email, emailForm.password);
+      setMessage('✅ Email changed successfully');
+      setEmailForm({ email: '', password: '' });
+      refreshProfile();
+    } catch (err) {
+      setMessage(err.response?.data?.error || 'Failed to change email');
+    }
+    setEmailLoading(false);
+    setPwLoading(false);
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -125,22 +166,63 @@ export default function Profile() {
       )}
 
       {tab === 'security' && (
-        <div className="card">
-          <h3 style={{ marginBottom: '16px' }}>Two-Factor Authentication</h3>
-          {user.two_factor_enabled ? (
-            <p style={{ color: 'var(--success)' }}>✅ 2FA is enabled</p>
-          ) : (
-            <>
-              <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '12px' }}>Add an extra layer of security</p>
-              <button className="btn btn-primary" onClick={enable2FA}>Enable 2FA</button>
-              {qrCode && (
-                <div style={{ marginTop: '16px', textAlign: 'center' }}>
-                  <img src={qrCode} alt="2FA QR" style={{ maxWidth: '200px', borderRadius: '8px' }} />
-                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px' }}>Scan with Google Authenticator</p>
-                </div>
-              )}
-            </>
-          )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+          {/* Change Password */}
+          <div className="card">
+            <h3 style={{ marginBottom: '16px' }}>🔑 Change Password</h3>
+            <div className="input-group">
+              <label>Current Password</label>
+              <input type="password" value={pwForm.current_password} onChange={e => setPwForm({ ...pwForm, current_password: e.target.value })} placeholder="Enter current password" />
+            </div>
+            <div className="input-group">
+              <label>New Password</label>
+              <input type="password" value={pwForm.new_password} onChange={e => setPwForm({ ...pwForm, new_password: e.target.value })} placeholder="Min 8 characters" />
+            </div>
+            <div className="input-group">
+              <label>Confirm New Password</label>
+              <input type="password" value={pwForm.confirm_password} onChange={e => setPwForm({ ...pwForm, confirm_password: e.target.value })} placeholder="Repeat new password" />
+            </div>
+            <button className="btn btn-primary" onClick={changePassword} disabled={pwLoading || !pwForm.current_password || !pwForm.new_password}>
+              {pwLoading ? 'Saving...' : 'Update Password'}
+            </button>
+          </div>
+
+          {/* Change Email */}
+          <div className="card">
+            <h3 style={{ marginBottom: '16px' }}>✉️ Change Email</h3>
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>Current: <strong style={{ color: 'white' }}>{user.email}</strong></p>
+            <div className="input-group">
+              <label>New Email</label>
+              <input type="email" value={emailForm.email} onChange={e => setEmailForm({ ...emailForm, email: e.target.value })} placeholder="Enter new email" />
+            </div>
+            <div className="input-group">
+              <label>Confirm with Password</label>
+              <input type="password" value={emailForm.password} onChange={e => setEmailForm({ ...emailForm, password: e.target.value })} placeholder="Enter your password" />
+            </div>
+            <button className="btn btn-primary" onClick={changeEmail} disabled={emailLoading || !emailForm.email || !emailForm.password}>
+              {emailLoading ? 'Saving...' : 'Update Email'}
+            </button>
+          </div>
+
+          {/* 2FA */}
+          <div className="card">
+            <h3 style={{ marginBottom: '16px' }}>🔐 Two-Factor Authentication</h3>
+            {user.two_factor_enabled ? (
+              <p style={{ color: 'var(--success)' }}>✅ 2FA is enabled</p>
+            ) : (
+              <>
+                <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '12px' }}>Add an extra layer of security</p>
+                <button className="btn btn-primary" onClick={enable2FA}>Enable 2FA</button>
+                {qrCode && (
+                  <div style={{ marginTop: '16px', textAlign: 'center' }}>
+                    <img src={qrCode} alt="2FA QR" style={{ maxWidth: '200px', borderRadius: '8px' }} />
+                    <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px' }}>Scan with Google Authenticator</p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
       )}
 

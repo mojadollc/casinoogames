@@ -68,6 +68,8 @@ export const authAPI = {
   enable2FA: () => api.post('/auth/2fa/enable'),
   verify2FA: (otp) => api.post('/auth/2fa/verify', { otp }),
   logout: () => api.post('/auth/logout', { refreshToken: localStorage.getItem('refreshToken') }),
+  changePassword: (current_password, new_password) => api.put('/auth/change-password', { current_password, new_password }),
+  changeEmail: (email, password) => api.put('/auth/change-email', { email, password }),
 };
 
 export const walletAPI = {

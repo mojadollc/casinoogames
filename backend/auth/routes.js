@@ -322,6 +322,49 @@ router.post('/kyc-bonus', authenticate, async (req, res) => {
   }
 });
 
+// Change Password
+router.put('/change-password', authenticate, [
+  body('current_password').notEmpty(),
+  body('new_password').isLength({ min: 8 }),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ error: 'New password must be at least 8 characters' });
+  const { current_password, new_password } = req.body;
+  try {
+    const result = await query('SELECT password_hash FROM users WHERE id = ?', [req.user.id]);
+    const match = await bcrypt.compare(current_password, result.rows[0].password_hash);
+    if (!match) return res.status(401).json({ error: 'Current password is incorrect' });
+    const hash = await bcrypt.hash(new_password, 12);
+    await query('UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?', [hash, req.user.id]);
+    await query('INSERT INTO audit_logs (id, user_id, action, ip_address) VALUES (UUID(),?,?,?)', [req.user.id, 'change_password', req.ip]);
+    res.json({ message: 'Password updated successfully' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to change password' });
+  }
+});
+
+// Change Email
+router.put('/change-email', authenticate, [
+  body('email').isEmail().normalizeEmail(),
+  body('password').notEmpty(),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ error: 'Invalid email format' });
+  const { email, password } = req.body;
+  try {
+    const result = await query('SELECT password_hash FROM users WHERE id = ?', [req.user.id]);
+    const match = await bcrypt.compare(password, result.rows[0].password_hash);
+    if (!match) return res.status(401).json({ error: 'Password is incorrect' });
+    const existing = await query('SELECT id FROM users WHERE email = ? AND id != ?', [email, req.user.id]);
+    if (existing.rows.length) return res.status(409).json({ error: 'Email already in use' });
+    await query('UPDATE users SET email = ?, updated_at = NOW() WHERE id = ?', [email, req.user.id]);
+    await query('INSERT INTO audit_logs (id, user_id, action, ip_address) VALUES (UUID(),?,?,?)', [req.user.id, 'change_email', req.ip]);
+    res.json({ message: 'Email updated successfully' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to change email' });
+  }
+});
+
 // Enable 2FA
 router.post('/2fa/enable', authenticate, async (req, res) => {
   const secret = speakeasy.generateSecret({ name: `CasinoPlatform:${req.user.username}` });
