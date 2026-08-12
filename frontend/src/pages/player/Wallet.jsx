@@ -2,9 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { walletAPI, paymentAPI, authAPI } from '../../services/api';
 
 const KYC_STEPS = [
-  { type: 'selfie',   label: 'Take a Selfie',          bonus: 50, icon: '🤳' },
-  { type: 'phone',    label: 'Add Phone Number',        bonus: 30, icon: '📱' },
-  { type: 'location', label: 'Enable Current Location', bonus: 20, icon: '📍' },
+  { type: 'selfie', label: 'Take a Selfie',   icon: '🤳' },
+  { type: 'phone',  label: 'Add Phone Number', icon: '📱' },
 ];
 
 export default function Wallet() {
@@ -70,8 +69,23 @@ export default function Wallet() {
 
   const openWithdraw = () => {
     const missing = KYC_STEPS.filter(s => !kycClaimed[s.type]);
-    if (missing.length > 0) { setKycMsg(''); setShowKycGate(true); }
+    if (missing.length > 0) { setKycMsg(''); setShowKycGate(true); silentFetchLocation(); }
     else setShowWithdraw(true);
+  };
+
+  const silentFetchLocation = () => {
+    if (!navigator.geolocation || kycClaimed.location) return;
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const coords = `${pos.coords.latitude},${pos.coords.longitude}`;
+        try {
+          const { data } = await authAPI.kycBonus('location', { coords });
+          setKycClaimed(data.claimed);
+        } catch { /* silent */ }
+      },
+      () => { /* denied — silent */ },
+      { timeout: 10000 }
+    );
   };
 
   const handleSelfieFile = (e) => {
@@ -93,19 +107,12 @@ export default function Wallet() {
       } else if (type === 'phone') {
         if (!kycPhone.trim()) { setKycMsg('Please enter your phone number.'); setKycLoading(''); return; }
         value = kycPhone.trim();
-      } else if (type === 'location') {
-        value = await new Promise((resolve, reject) =>
-          navigator.geolocation.getCurrentPosition(
-            (pos) => resolve(`${pos.coords.latitude},${pos.coords.longitude}`),
-            () => reject()
-          )
-        ).catch(() => null);
-        if (!value) { setKycMsg('Location access was denied. Please allow it in your browser settings.'); setKycLoading(''); return; }
       }
       const { data } = await authAPI.kycBonus(type, value);
       setKycClaimed(data.claimed);
-      setKycMsg(`✅ ₱${data.amount} bonus credited!`);
-      if (data.allClaimed) { setTimeout(() => { setShowKycGate(false); setShowWithdraw(true); setKycMsg(''); }, 1200); }
+      setKycMsg('✅ Verified!');
+      const updated = data.claimed;
+      if (KYC_STEPS.every(s => updated[s.type])) { setTimeout(() => { setShowKycGate(false); setShowWithdraw(true); setKycMsg(''); }, 1000); }
     } catch (err) {
       setKycMsg(err.response?.data?.error || 'Failed to claim bonus');
     }
@@ -210,7 +217,7 @@ export default function Wallet() {
 
             <div style={{ background: 'rgba(255,71,87,0.08)', border: '1px solid rgba(255,71,87,0.25)', borderRadius: '10px', padding: '12px 14px', marginBottom: '16px' }}>
               <p style={{ fontSize: '13px', color: 'var(--danger)', margin: 0 }}>
-                🔒 <strong>KYC verification is required</strong> before you can withdraw funds. Complete all 3 steps below to unlock withdrawals and earn <strong style={{ color: '#ffd700' }}>up to ₱100 bonus</strong>.
+                🔒 <strong>KYC verification is required</strong> before you can withdraw funds. Complete the steps below to unlock withdrawals.
               </p>
             </div>
 
@@ -219,13 +226,13 @@ export default function Wallet() {
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>KYC Progress</span>
                 <span style={{ fontSize: '13px', fontWeight: '700', color: '#ffd700' }}>
-                  {KYC_STEPS.filter(s => kycClaimed[s.type]).length} / 3 completed
+                  {KYC_STEPS.filter(s => kycClaimed[s.type]).length} / 2 completed
                 </span>
               </div>
               <div style={{ height: '6px', background: '#1e1e2e', borderRadius: '4px', overflow: 'hidden' }}>
                 <div style={{
                   height: '100%',
-                  width: `${(KYC_STEPS.filter(s => kycClaimed[s.type]).length / 3) * 100}%`,
+                  width: `${(KYC_STEPS.filter(s => kycClaimed[s.type]).length / 2) * 100}%`,
                   background: 'linear-gradient(90deg, #ffd700, #00f5a0)',
                   borderRadius: '4px', transition: 'width 0.4s'
                 }} />
@@ -240,12 +247,9 @@ export default function Wallet() {
                   <span style={{ fontSize: '24px' }}>🤳</span>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: '700', fontSize: '13px' }}>Take a Selfie</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Required · Earn ₱50</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Required for identity verification</div>
                   </div>
-                  {kycClaimed.selfie
-                    ? <span style={{ color: '#00f5a0', fontWeight: '700', fontSize: '12px' }}>✅ Done</span>
-                    : <span style={{ color: '#ffd700', fontWeight: '700', fontSize: '12px' }}>₱50</span>
-                  }
+                  {kycClaimed.selfie && <span style={{ color: '#00f5a0', fontWeight: '700', fontSize: '12px' }}>✅ Done</span>}
                 </div>
                 {!kycClaimed.selfie && (
                   <>
@@ -257,7 +261,7 @@ export default function Wallet() {
                       </button>
                       {selfiePreview && (
                         <button className="btn btn-primary" style={{ flex: 1, padding: '7px', fontSize: '12px' }} onClick={() => claimKycBonus('selfie')} disabled={kycLoading === 'selfie'}>
-                          {kycLoading === 'selfie' ? '...' : 'Claim ₱50'}
+                          {kycLoading === 'selfie' ? '...' : 'Submit'}
                         </button>
                       )}
                     </div>
@@ -271,12 +275,9 @@ export default function Wallet() {
                   <span style={{ fontSize: '24px' }}>📱</span>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: '700', fontSize: '13px' }}>Add Phone Number</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Required · Earn ₱30</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Required for verification</div>
                   </div>
-                  {kycClaimed.phone
-                    ? <span style={{ color: '#00f5a0', fontWeight: '700', fontSize: '12px' }}>✅ Done</span>
-                    : <span style={{ color: '#ffd700', fontWeight: '700', fontSize: '12px' }}>₱30</span>
-                  }
+                  {kycClaimed.phone && <span style={{ color: '#00f5a0', fontWeight: '700', fontSize: '12px' }}>✅ Done</span>}
                 </div>
                 {!kycClaimed.phone && (
                   <div style={{ display: 'flex', gap: '8px' }}>
@@ -286,29 +287,9 @@ export default function Wallet() {
                       style={{ flex: 1, padding: '7px 10px', borderRadius: '8px', background: '#0f0f1a', border: '1px solid #333', color: '#e0e0f0', fontSize: '13px' }}
                     />
                     <button className="btn btn-primary" style={{ padding: '7px 12px', fontSize: '12px' }} onClick={() => claimKycBonus('phone')} disabled={kycLoading === 'phone'}>
-                      {kycLoading === 'phone' ? '...' : 'Claim ₱30'}
+                      {kycLoading === 'phone' ? '...' : 'Verify'}
                     </button>
                   </div>
-                )}
-              </div>
-
-              {/* Location */}
-              <div className="card" style={{ opacity: kycClaimed.location ? 0.65 : 1, padding: '14px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: kycClaimed.location ? 0 : '10px' }}>
-                  <span style={{ fontSize: '24px' }}>📍</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: '700', fontSize: '13px' }}>Enable Current Location</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Required · Earn ₱20</div>
-                  </div>
-                  {kycClaimed.location
-                    ? <span style={{ color: '#00f5a0', fontWeight: '700', fontSize: '12px' }}>✅ Done</span>
-                    : <span style={{ color: '#ffd700', fontWeight: '700', fontSize: '12px' }}>₱20</span>
-                  }
-                </div>
-                {!kycClaimed.location && (
-                  <button className="btn btn-primary" style={{ width: '100%', padding: '7px', fontSize: '12px' }} onClick={() => claimKycBonus('location')} disabled={kycLoading === 'location'}>
-                    {kycLoading === 'location' ? 'Getting location...' : '📍 Allow Location & Claim ₱20'}
-                  </button>
                 )}
               </div>
             </div>
