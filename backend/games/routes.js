@@ -333,6 +333,9 @@ router.post('/:gameId/fishing-shoot', authenticate, gameLimiter, async (req, res
       );
       if (parseFloat(sessionWin.rows[0].total) >= controls.payout_cap) { totalWin = 0; hit = false; }
     }
+
+    if (!controls.dry_run) {
+      await debitWallet(req.user.id, betAmount, 'bet', `Fishing shot on ${g.name}`, gameId);
       if (totalWin > 0) await creditWallet(req.user.id, totalWin, 'win', `Fishing win on ${g.name}`, gameId);
     }
 
