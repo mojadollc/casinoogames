@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { gameAPI, walletAPI } from '../../services/api';
 import { useLogo } from '../../hooks/useLogo';
 import { io } from 'socket.io-client';
+import { GameCardSkeleton, HotGameSkeleton, BannerSkeleton, CategorySkeleton } from '../../components/shared/Skeleton';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3020';
 
@@ -588,7 +589,8 @@ export default function Home() {
       </div>
 
       {/* Mobile Banner Carousel */}
-      <div className="mobile-banner" style={{ margin: '0 16px 16px', padding: '20px', background: `linear-gradient(135deg, #1a0a2e, #2d1b4e)`, borderRadius: '16px', border: `2px solid ${banner.color}`, boxShadow: `0 0 30px ${banner.color}30` }}>
+      {loading && <BannerSkeleton />}
+      <div className="mobile-banner" style={{ display: loading ? 'none' : undefined }} style={{ margin: '0 16px 16px', padding: '20px', background: `linear-gradient(135deg, #1a0a2e, #2d1b4e)`, borderRadius: '16px', border: `2px solid ${banner.color}`, boxShadow: `0 0 30px ${banner.color}30` }}>
         <div style={{ fontSize: '22px', fontWeight: '900', color: banner.color, marginBottom: '6px' }}>{banner.title}</div>
         <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.8)' }}>{banner.subtitle}</div>
         <div style={{ display: 'flex', gap: '6px', marginTop: '12px' }}>
@@ -597,9 +599,11 @@ export default function Home() {
       </div>
 
       {/* Jackpot Counter */}
-      <div className="jackpot-section" style={{ padding: '0 16px' }}>
-        <JackpotCounter value={jackpot} />
-      </div>
+      {!loading && (
+        <div className="jackpot-section" style={{ padding: '0 16px' }}>
+          <JackpotCounter value={jackpot} />
+        </div>
+      )}
 
       {/* Desktop Hero Section */}
       <section className="desktop-hero" style={{ background: 'linear-gradient(135deg, #0d0221, #1a0a2e, #0d0221)', padding: '60px 32px', position: 'relative', overflow: 'hidden' }}>
@@ -683,17 +687,20 @@ export default function Home() {
           <span style={{ fontSize: '12px', color: 'var(--gold)' }}>See All →</span>
         </div>
         <div style={{ display: 'flex', overflowX: 'auto', gap: '12px', WebkitOverflowScrolling: 'touch' }}>
-          {allGames.filter(g => g.hot).slice(0, 6).map((game, i) => (
-            <Link to={`/game/${game.slug}`} key={i} style={{ flexShrink: 0, width: '110px', textDecoration: 'none' }}>
-              <div style={{ width: '110px', height: '110px', background: 'linear-gradient(145deg, #2d1b4e, #1a0a2e)', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px', border: '2px solid rgba(255, 215, 0, 0.2)', position: 'relative', overflow: 'hidden' }}>
-                {game.thumbnail_url
-                  ? <img src={game.thumbnail_url} alt={game.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  : <GameIcon slug={game.slug} category={game.category} size={64} />}
-                <div style={{ position: 'absolute', top: '6px', right: '6px', background: '#ff2d75', padding: '2px 6px', borderRadius: '6px', fontSize: '8px', fontWeight: '700', zIndex: 1 }}>HOT</div>
-              </div>
-              <div style={{ fontSize: '11px', fontWeight: '600', color: 'white', textAlign: 'center' }}>{game.name}</div>
-            </Link>
-          ))}
+          {loading
+            ? Array.from({ length: 5 }).map((_, i) => <HotGameSkeleton key={i} />)
+            : allGames.filter(g => g.hot).slice(0, 6).map((game, i) => (
+              <Link to={`/game/${game.slug}`} key={i} style={{ flexShrink: 0, width: '110px', textDecoration: 'none' }}>
+                <div style={{ width: '110px', height: '110px', background: 'linear-gradient(145deg, #2d1b4e, #1a0a2e)', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px', border: '2px solid rgba(255, 215, 0, 0.2)', position: 'relative', overflow: 'hidden' }}>
+                  {game.thumbnail_url
+                    ? <img src={game.thumbnail_url} alt={game.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : <GameIcon slug={game.slug} category={game.category} size={64} />}
+                  <div style={{ position: 'absolute', top: '6px', right: '6px', background: '#ff2d75', padding: '2px 6px', borderRadius: '6px', fontSize: '8px', fontWeight: '700', zIndex: 1 }}>HOT</div>
+                </div>
+                <div style={{ fontSize: '11px', fontWeight: '600', color: 'white', textAlign: 'center' }}>{game.name}</div>
+              </Link>
+            ))
+          }
         </div>
       </div>
 
@@ -702,26 +709,29 @@ export default function Home() {
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           <h3 className="section-title" style={{ fontSize: '18px', fontWeight: '700', marginBottom: '20px' }}>🎮 {activeCategory === 'all' ? 'All Games' : CATEGORIES.find(c => c.id === activeCategory)?.name}</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '16px' }}>
-            {filteredGames.map((game, i) => (
-              <Link to={`/game/${game.slug}`} key={i} style={{ textDecoration: 'none' }}>
-                <div style={{ background: game.bg || 'linear-gradient(145deg, #1a0a2e, #0d0515)', borderRadius: '18px', overflow: 'hidden', border: '1px solid rgba(255, 215, 0, 0.1)', transition: 'transform 0.2s, box-shadow 0.2s' }}>
-                  <div style={{ height: '140px', background: 'rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
-                    {game.thumbnail_url
-                      ? <img src={game.thumbnail_url} alt={game.name} style={{ width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0 }} />
-                      : <GameIcon slug={game.slug} category={game.category} size={80} />}
-                    {game.hot && <div style={{ position: 'absolute', top: '10px', right: '10px', background: '#ff2d75', padding: '4px 10px', borderRadius: '8px', fontSize: '10px', fontWeight: '800', zIndex: 1 }}>🔥 HOT</div>}
-                    {game.new && !game.hot && <div style={{ position: 'absolute', top: '10px', right: '10px', background: '#00f5d4', color: '#0d0221', padding: '4px 10px', borderRadius: '8px', fontSize: '10px', fontWeight: '800', zIndex: 1 }}>✨ NEW</div>}
-                  </div>
-                  <div style={{ padding: '14px', background: 'rgba(0,0,0,0.5)' }}>
-                    <div style={{ fontSize: '13px', fontWeight: '700', color: 'white', marginBottom: '4px' }}>{game.name}</div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{game.provider}</span>
-                      <span style={{ fontSize: '10px', color: 'var(--secondary)' }}>RTP {game.rtp}%</span>
+            {loading
+              ? Array.from({ length: 12 }).map((_, i) => <GameCardSkeleton key={i} />)
+              : filteredGames.map((game, i) => (
+                <Link to={`/game/${game.slug}`} key={i} style={{ textDecoration: 'none' }}>
+                  <div style={{ background: game.bg || 'linear-gradient(145deg, #1a0a2e, #0d0515)', borderRadius: '18px', overflow: 'hidden', border: '1px solid rgba(255, 215, 0, 0.1)', transition: 'transform 0.2s, box-shadow 0.2s' }}>
+                    <div style={{ height: '140px', background: 'rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
+                      {game.thumbnail_url
+                        ? <img src={game.thumbnail_url} alt={game.name} style={{ width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0 }} />
+                        : <GameIcon slug={game.slug} category={game.category} size={80} />}
+                      {game.hot && <div style={{ position: 'absolute', top: '10px', right: '10px', background: '#ff2d75', padding: '4px 10px', borderRadius: '8px', fontSize: '10px', fontWeight: '800', zIndex: 1 }}>🔥 HOT</div>}
+                      {game.new && !game.hot && <div style={{ position: 'absolute', top: '10px', right: '10px', background: '#00f5d4', color: '#0d0221', padding: '4px 10px', borderRadius: '8px', fontSize: '10px', fontWeight: '800', zIndex: 1 }}>✨ NEW</div>}
+                    </div>
+                    <div style={{ padding: '14px', background: 'rgba(0,0,0,0.5)' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '700', color: 'white', marginBottom: '4px' }}>{game.name}</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{game.provider}</span>
+                        <span style={{ fontSize: '10px', color: 'var(--secondary)' }}>RTP {game.rtp}%</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </Link>
-            ))}
+                </Link>
+              ))
+            }
           </div>
         </div>
       </section>

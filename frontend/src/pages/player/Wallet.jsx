@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { walletAPI, paymentAPI, authAPI } from '../../services/api';
+import { WalletBalanceSkeleton, TransactionSkeleton } from '../../components/shared/Skeleton';
 
 const KYC_STEPS = [
   { type: 'selfie', label: 'Take a Selfie',   icon: '🤳' },
@@ -27,9 +28,11 @@ export default function Wallet() {
   const [withdrawForm, setWithdrawForm] = useState({ amount: '', bank_code: '', account_number: '', account_name: '' });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [walletLoading, setWalletLoading] = useState(true);
+  const [txLoading, setTxLoading] = useState(true);
 
   useEffect(() => {
-    walletAPI.balance().then(({ data }) => setBalance(data));
+    walletAPI.balance().then(({ data }) => { setBalance(data); setWalletLoading(false); }).catch(() => setWalletLoading(false));
     authAPI.profile().then(({ data }) => {
       const c = data.kyc_bonus_claimed;
       setKycClaimed(c ? (typeof c === 'string' ? JSON.parse(c) : c) : {});
@@ -37,11 +40,10 @@ export default function Wallet() {
   }, []);
 
   useEffect(() => {
+    setTxLoading(true);
     walletAPI.transactions({ page, limit: LIMIT })
-      .then(({ data }) => {
-        setTransactions(data.transactions);
-        setTotalTx(data.total);
-      });
+      .then(({ data }) => { setTransactions(data.transactions); setTotalTx(data.total); })
+      .finally(() => setTxLoading(false));
   }, [page]);
 
   const handleDeposit = async (e) => {
@@ -150,13 +152,13 @@ export default function Wallet() {
   return (
     <div>
       {/* Balance Card */}
-      <div className="balance-card">
+      {walletLoading ? <WalletBalanceSkeleton /> : <div className="balance-card"
         <p className="label">Total Balance</p>
         <p className="amount">₱{Number(balance.balance).toLocaleString('en', { minimumFractionDigits: 2 })}</p>
         {balance.bonus_balance > 0 && (
           <p className="label">Bonus: ₱{Number(balance.bonus_balance).toFixed(2)}</p>
         )}
-      </div>
+      </div>}
 
       {/* Action Buttons */}
       <div className="action-buttons">
@@ -169,7 +171,9 @@ export default function Wallet() {
       {/* Transactions */}
       <div className="card">
         <h3 style={{ marginBottom: '12px', fontSize: '16px' }}>Recent Transactions</h3>
-        {transactions.length === 0 ? (
+        {txLoading ? (
+          Array.from({ length: 5 }).map((_, i) => <TransactionSkeleton key={i} />)
+        ) : transactions.length === 0 ? (
           <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>No transactions yet</p>
         ) : (
           <>
