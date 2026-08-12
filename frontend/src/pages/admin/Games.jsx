@@ -157,6 +157,7 @@ export default function AdminGames() {
     setLoading(true);
     adminAPI.games().then(({ data }) => {
       setGames(data);
+      // Only auto-select first game on initial load, not on every reload
       if (data.length > 0 && !selectedGame) selectGame(data[0].id);
     }).finally(() => setLoading(false));
   };
@@ -214,11 +215,11 @@ export default function AdminGames() {
     try {
       await adminAPI.bulkSetWinRate(globalWinRate, targetIds);
       notify(`⚡ Win rate set to ${globalWinRate}% for ${targetIds.length} game(s)`);
-      // Reload from server to confirm persisted values
-      loadGames();
+      // Update local game list without re-fetching (avoids wiping controls panel)
+      setGames(prev => prev.map(g => targetIds.includes(g.id) ? { ...g, win_rate: globalWinRate } : g));
+      // Refresh controls panel for selected game if it was affected
       if (selectedGame && targetIds.includes(selectedGame)) {
-        const cr = await adminAPI.getGameControls(selectedGame);
-        setControls(cr.data);
+        setControls(prev => prev ? { ...prev, win_rate: globalWinRate } : prev);
       }
     } catch {
       notify('✗ Failed to apply bulk win rate');
@@ -290,8 +291,12 @@ export default function AdminGames() {
 
   const updateControls = (field, value) => {
     setControls(prev => ({ ...prev, [field]: value }));
+    // Also update the games list so win_rate column stays in sync
+    if (field === 'win_rate') {
+      setGames(prev => prev.map(g => g.id === selectedGame ? { ...g, win_rate: value } : g));
+    }
     saveControlsRef.current[field] = value;
-    // Debounce: wait 400ms after last change before saving
+    // Debounce: wait 800ms after last change before saving
     clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
       const pending = { ...saveControlsRef.current };
@@ -300,7 +305,7 @@ export default function AdminGames() {
         await adminAPI.setGameControls(selectedGame, pending);
         notify('✓ Settings saved');
       } catch { notify('✗ Failed to update'); }
-    }, 400);
+    }, 800);
   };
 
   const updateGameRTP = async (rtp) => {
@@ -437,8 +442,10 @@ export default function AdminGames() {
                   : games.map(g => g.id);
                 await adminAPI.bulkSetForceOutcome(globalForceOutcome || null, targetIds);
                 notify(`✓ Force outcome set to "${globalForceOutcome || 'random'}" for ${targetIds.length} game(s)`);
-                loadGames();
-                if (selectedGame) { const cr = await adminAPI.getGameControls(selectedGame); setControls(cr.data); }
+                // Update controls panel directly without reloading
+                if (selectedGame && targetIds.includes(selectedGame)) {
+                  setControls(prev => prev ? { ...prev, force_outcome: globalForceOutcome || null } : prev);
+                }
               } catch { notify('✗ Failed to apply force outcome'); }
               finally { setApplyingBulkForce(false); }
             }}>
