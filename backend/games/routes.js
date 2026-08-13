@@ -391,11 +391,14 @@ router.post('/:gameId/fishing-shoot', authenticate, gameLimiter, async (req, res
     // force_outcome=loss overrides hit result
     if (controls.force_outcome === 'loss') { totalWin = 0; hit = false; fish = null; }
 
-    // Apply min/max payout — only on real wins
-    if (totalWin > 0) {
+    // HARD CAP — max_payout is absolute, applied before and after everything
+    const fishingHardCap = controls.max_payout > 0 ? betAmount * controls.max_payout : Infinity;
+    if (totalWin > fishingHardCap) totalWin = parseFloat(fishingHardCap.toFixed(2));
+
+    // Apply min payout floor — only on real wins
+    if (totalWin > 0 && controls.force_outcome !== 'loss') {
       const mult = totalWin / betAmount;
       if (controls.min_payout > 0 && mult < controls.min_payout) totalWin = parseFloat((betAmount * controls.min_payout).toFixed(2));
-      if (controls.max_payout > 0 && mult > controls.max_payout) totalWin = parseFloat((betAmount * controls.max_payout).toFixed(2));
     }
     // Payout cap — clamp current win to remaining cross-game allowance
     if (controls.payout_cap > 0 && totalWin > 0) {
@@ -611,11 +614,15 @@ router.post('/:gameId/play', authenticate, gameLimiter, async (req, res) => {
     // force_outcome=loss overrides everything — zero win, no min_payout boost
     if (forceOutcome === 'loss') totalWin = 0;
 
-    // Apply min/max payout — only on real wins, never on forced losses
+    // HARD CAP — max_payout absolute, applied before min_payout floor
+    if (totalWin > 0 && forceOutcome !== 'loss' && controls.max_payout > 0) {
+      const hard = amount * controls.max_payout;
+      if (totalWin > hard) totalWin = parseFloat(hard.toFixed(2));
+    }
+    // Min payout floor — only on real wins
     if (totalWin > 0 && forceOutcome !== 'loss') {
       const mult = totalWin / amount;
       if (controls.min_payout > 0 && mult < controls.min_payout) totalWin = parseFloat((amount * controls.min_payout).toFixed(2));
-      if (controls.max_payout > 0 && mult > controls.max_payout) totalWin = parseFloat((amount * controls.max_payout).toFixed(2));
     }
     // Payout cap — clamp current win to remaining cross-game allowance
     if (controls.payout_cap > 0 && totalWin > 0) {
@@ -1041,11 +1048,15 @@ router.post('/:gameId/cockfight', authenticate, gameLimiter, async (req, res) =>
     // force_outcome=loss overrides winner — zero win, no push refund
     if (controls.force_outcome === 'loss') { totalWin = 0; }
 
-    // Apply min/max payout — only on real wins, never on forced losses
+    // HARD CAP — max_payout absolute, applied before min_payout floor
+    if (totalWin > 0 && controls.force_outcome !== 'loss' && controls.max_payout > 0) {
+      const hard = betAmount * controls.max_payout;
+      if (totalWin > hard) totalWin = parseFloat(hard.toFixed(2));
+    }
+    // Min payout floor — only on real wins
     if (totalWin > 0 && controls.force_outcome !== 'loss') {
       const mult = totalWin / betAmount;
       if (controls.min_payout > 0 && mult < controls.min_payout) totalWin = parseFloat((betAmount * controls.min_payout).toFixed(2));
-      if (controls.max_payout > 0 && mult > controls.max_payout) totalWin = parseFloat((betAmount * controls.max_payout).toFixed(2));
     }
     // Payout cap — clamp current win to remaining cross-game allowance
     if (controls.payout_cap > 0 && totalWin > 0) {

@@ -28,16 +28,16 @@ const DEFAULT_CONFIG = {
   reels: 5,
   rows: 3,
   symbols: [
-    { id: 'wild',   name: 'Wild',   weight: 2,  payout: { 3: 10,  4: 30,  5: 100  }, isWild: true },
-    { id: 'scatter',name: 'Scatter',weight: 3,  payout: { 3: 2,   4: 8,   5: 25   }, isScatter: true },
-    { id: 'seven',  name: 'Seven',  weight: 5,  payout: { 3: 8,   4: 20,  5: 75   } },
-    { id: 'bar',    name: 'Bar',    weight: 8,  payout: { 3: 5,   4: 12,  5: 40   } },
-    { id: 'bell',   name: 'Bell',   weight: 10, payout: { 3: 4,   4: 10,  5: 25   } },
-    { id: 'cherry', name: 'Cherry', weight: 12, payout: { 3: 3,   4: 7,   5: 18   } },
-    { id: 'lemon',  name: 'Lemon',  weight: 15, payout: { 3: 1.5, 4: 4,   5: 10   } },
-    { id: 'orange', name: 'Orange', weight: 15, payout: { 3: 1.5, 4: 4,   5: 10   } },
-    { id: 'plum',   name: 'Plum',   weight: 15, payout: { 3: 1,   4: 3,   5: 7    } },
-    { id: 'grape',  name: 'Grape',  weight: 15, payout: { 3: 1,   4: 3,   5: 7    } }
+    { id: 'wild',   name: 'Wild',   weight: 2,  payout: { 3: 3,   4: 8,   5: 15   }, isWild: true },
+    { id: 'scatter',name: 'Scatter',weight: 3,  payout: { 3: 1.5, 4: 3,   5: 8    }, isScatter: true },
+    { id: 'seven',  name: 'Seven',  weight: 5,  payout: { 3: 2.5, 4: 5,   5: 10   } },
+    { id: 'bar',    name: 'Bar',    weight: 8,  payout: { 3: 2,   4: 4,   5: 8    } },
+    { id: 'bell',   name: 'Bell',   weight: 10, payout: { 3: 1.5, 4: 3,   5: 6    } },
+    { id: 'cherry', name: 'Cherry', weight: 12, payout: { 3: 1.2, 4: 2.5, 5: 5    } },
+    { id: 'lemon',  name: 'Lemon',  weight: 15, payout: { 3: 1,   4: 2,   5: 3    } },
+    { id: 'orange', name: 'Orange', weight: 15, payout: { 3: 1,   4: 2,   5: 3    } },
+    { id: 'plum',   name: 'Plum',   weight: 15, payout: { 3: 0.8, 4: 1.5, 5: 2.5  } },
+    { id: 'grape',  name: 'Grape',  weight: 15, payout: { 3: 0.8, 4: 1.5, 5: 2.5  } }
   ],
   paylines: [
     [1, 1, 1, 1, 1], // middle
@@ -336,14 +336,17 @@ class GameEngine {
     let totalWin = isForceLoss ? 0 : paylineWins.reduce((sum, w) => sum + (w.payout * betAmount), 0);
     let freeSpinsAwarded = 0;
 
-    // Apply min/max payout — ONLY on real wins, never on forced losses
+    // HARD CAP — enforce max_payout immediately, before any multipliers
+    if (totalWin > 0 && !isForceLoss && this.settings.maxPayout > 0) {
+      const hard = betAmount * this.settings.maxPayout;
+      if (totalWin > hard) totalWin = hard;
+    }
+
+    // Apply min payout floor — only on real wins
     if (totalWin > 0 && !isForceLoss) {
       const payoutMultiplier = totalWin / betAmount;
       if (this.settings.minPayout > 0 && payoutMultiplier < this.settings.minPayout) {
         totalWin = betAmount * this.settings.minPayout;
-      }
-      if (this.settings.maxPayout > 0 && payoutMultiplier > this.settings.maxPayout) {
-        totalWin = betAmount * this.settings.maxPayout;
       }
     }
 
@@ -362,6 +365,12 @@ class GameEngine {
     // VIP bonus — not on forced loss
     if (this.settings.playerClass === 'vip' && totalWin > 0 && !isForceLoss) {
       totalWin *= 1.1;
+    }
+
+    // Final hard cap — re-apply after all multipliers to guarantee max_payout is never exceeded
+    if (totalWin > 0 && !isForceLoss && this.settings.maxPayout > 0) {
+      const hard = betAmount * this.settings.maxPayout;
+      if (totalWin > hard) totalWin = hard;
     }
 
     // Jackpot contribution
