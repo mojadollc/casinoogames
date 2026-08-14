@@ -3,8 +3,204 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { gameAPI, walletAPI } from '../../services/api';
 import SlotSymbol from '../../components/slots/SlotSymbols';
 
-// Symbol definitions — MUST match game-engine/engine.js DEFAULT_CONFIG ids
-const SYMBOLS = {
+// Game-specific themed symbol sets
+const GAME_THEMES = {
+  'fortune-tiger': {
+    wild:    { icon: '🐅', color: '#ff6b00', value: 100, name: 'Tiger Wild' },
+    scatter: { icon: '🧧', color: '#ff0000', value: 25,  name: 'Lucky Red Envelope' },
+    seven:   { icon: '🐯', color: '#ffd700', value: 75,  name: 'Golden Tiger' },
+    bar:     { icon: '🎪', color: '#ff4757', value: 40,  name: 'Lantern' },
+    bell:    { icon: '🎋', color: '#2ed573', value: 25,  name: 'Bamboo' },
+    cherry:  { icon: '🍊', color: '#ff9f43', value: 18,  name: 'Mandarin' },
+    lemon:   { icon: '🏯', color: '#eccc68', value: 10,  name: 'Temple' },
+    orange:  { icon: '🎎', color: '#ff6b6b', value: 10,  name: 'Daruma' },
+    plum:    { icon: '🪭', color: '#ff4757', value: 7,   name: 'Fan' },
+    grape:   { icon: '🎐', color: '#70a1ff', value: 7,   name: 'Wind Chime' }
+  },
+  'fortune-ox': {
+    wild:    { icon: '🐂', color: '#c41e3a', value: 100, name: 'Ox Wild' },
+    scatter: { icon: '💰', color: '#ffd700', value: 25,  name: 'Gold Ingot' },
+    seven:   { icon: '🐃', color: '#8b4513', value: 75,  name: 'Water Buffalo' },
+    bar:     { icon: '🌾', color: '#daa520', value: 40,  name: 'Rice' },
+    bell:    { icon: '🏔️', color: '#6b8e23', value: 25,  name: 'Mountain' },
+    cherry:  { icon: '🥬', color: '#228b22', value: 18,  name: 'Cabbage' },
+    lemon:   { icon: '🧺', color: '#8b4513', value: 10,  name: 'Basket' },
+    orange:  { icon: '🎋', color: '#228b22', value: 10,  name: 'Bamboo' },
+    plum:    { icon: '🪷', color: '#ff69b4', value: 7,   name: 'Lotus' },
+    grape:   { icon: '☔', color: '#ff6347', value: 7,   name: 'Umbrella' }
+  },
+  'fortune-mouse': {
+    wild:    { icon: '🐭', color: '#ff9999', value: 100, name: 'Mouse Wild' },
+    scatter: { icon: '🧀', color: '#ffd700', value: 25,  name: 'Golden Cheese' },
+    seven:   { icon: '🐀', color: '#4a4a4a', value: 75,  name: 'Rat King' },
+    bar:     { icon: '🍚', color: '#fffacd', value: 40,  name: 'Rice Bowl' },
+    bell:    { icon: '🧧', color: '#ff0000', value: 25,  name: 'Red Packet' },
+    cherry:  { icon: '🥮', color: '#d2691e', value: 18,  name: 'Mooncake' },
+    lemon:   { icon: '🏮', color: '#ff4500', value: 10,  name: 'Lantern' },
+    orange:  { icon: '🧨', color: '#ff0000', value: 10,  name: 'Firecracker' },
+    plum:    { icon: '🎎', color: '#ff1493', value: 7,   name: 'Doll' },
+    grape:   { icon: '🪙', color: '#ffd700', value: 7,   name: 'Coin' }
+  },
+  'gates-of-olympus': {
+    wild:    { icon: '⚔️', color: '#ff0000', value: 100, name: 'Zeus Lightning' },
+    scatter: { icon: '🏛️', color: '#4169e1', value: 25,  name: 'Temple' },
+    seven:   { icon: '👑', color: '#ffd700', value: 75,  name: 'Crown' },
+    bar:     { icon: '🦅', color: '#8b4513', value: 40,  name: 'Eagle' },
+    bell:    { icon: '⚡', color: '#ffd700', value: 25,  name: 'Lightning Bolt' },
+    cherry:  { icon: '🛡️', color: '#c0c0c0', value: 18,  name: 'Shield' },
+    lemon:   { icon: '🏺', color: '#cd853f', value: 10,  name: 'Amphora' },
+    orange:  { icon: '🌊', color: '#00bfff', value: 10,  name: 'Wave' },
+    plum:    { icon: '🦉', color: '#8b4513', value: 7,   name: 'Owl' },
+    grape:   { icon: '🍇', color: '#8b008b', value: 7,   name: 'Grapes' }
+  },
+  'starlight-princess': {
+    wild:    { icon: '👸', color: '#ff69b4', value: 100, name: 'Princess Wild' },
+    scatter: { icon: '⭐', color: '#ffd700', value: 25,  name: 'Star' },
+    seven:   { icon: '👑', color: '#ff1493', value: 75,  name: 'Crown' },
+    bar:     { icon: '💫', color: '#da70d6', value: 40,  name: 'Sparkle' },
+    bell:    { icon: '🌙', color: '#f0e68c', value: 25,  name: 'Moon' },
+    cherry:  { icon: '💎', color: '#e6e6fa', value: 18,  name: 'Diamond' },
+    lemon:   { icon: '🌸', color: '#ffb6c1', value: 10,  name: 'Cherry Blossom' },
+    orange:  { icon: '🎀', color: '#ff69b4', value: 10,  name: 'Ribbon' },
+    plum:    { icon: '💒', color: '#dda0dd', value: 7,   name: 'Castle' },
+    grape:   { icon: '🦄', color: '#e6e6fa', value: 7,   name: 'Unicorn' }
+  },
+  'sweet-bonanza': {
+    wild:    { icon: '🍭', color: '#ff69b4', value: 100, name: 'Lollipop Wild' },
+    scatter: { icon: '🍬', color: '#ff1493', value: 25,  name: 'Candy Scatter' },
+    seven:   { icon: '🎂', color: '#ffdab9', value: 75,  name: 'Cake' },
+    bar:     { icon: '🍩', color: '#d2691e', value: 40,  name: 'Donut' },
+    bell:    { icon: '🧁', color: '#ff69b4', value: 25,  name: 'Cupcake' },
+    cherry:  { icon: '🍪', color: '#daa520', value: 18,  name: 'Cookie' },
+    lemon:   { icon: '🍦', color: '#fffacd', value: 10,  name: 'Ice Cream' },
+    orange:  { icon: '🍫', color: '#8b4513', value: 10,  name: 'Chocolate' },
+    plum:    { icon: '🧃', color: '#ff6347', value: 7,   name: 'Juice Box' },
+    grape:   { icon: '🍇', color: '#8b008b', value: 7,   name: 'Grape' }
+  },
+  'wild-bandito': {
+    wild:    { icon: '🤠', color: '#ffa500', value: 100, name: 'Bandito Wild' },
+    scatter: { icon: '💰', color: '#ffd700', value: 25,  name: 'Money Bag' },
+    seven:   { icon: '🌵', color: '#228b22', value: 75,  name: 'Cactus' },
+    bar:     { icon: '🤠', color: '#8b4513', value: 40,  name: 'Cowboy Hat' },
+    bell:    { icon: '🪣', color: '#daa520', value: 25,  name: 'Gold Pan' },
+    cherry:  { icon: '🦎', color: '#32cd32', value: 18,  name: 'Lizard' },
+    lemon:   { icon: '🐎', color: '#8b4513', value: 10,  name: 'Horse' },
+    orange:  { icon: '🌄', color: '#ff8c00', value: 10,  name: 'Sunset' },
+    plum:    { icon: '🎯', color: '#ff0000', value: 7,   name: 'Target' },
+    grape:   { icon: '🪨', color: '#808080', value: 7,   name: 'Rock' }
+  },
+  'mahjong-ways': {
+    wild:    { icon: '🀄', color: '#ff0000', value: 100, name: 'Red Dragon' },
+    scatter: { icon: '🎴', color: '#00ff00', value: 25,  name: 'Mahjong Tile' },
+    seven:   { icon: '🀇', color: '#0000ff', value: 75,  name: 'Character One' },
+    bar:     { icon: '🀙', color: '#008000', value: 40,  name: 'Bamboo One' },
+    bell:    { icon: '🀡', color: '#ff4500', value: 25,  name: 'Dot One' },
+    cherry:  { icon: '🀐', color: '#ffd700', value: 18,  name: 'Wind Tile' },
+    lemon:   { icon: '🀅', color: '#ff69b4', value: 10,  name: 'Dragon Tile' },
+    orange:  { icon: '🀝', color: '#00ced1', value: 10,  name: 'Bamboo Tile' },
+    plum:    { icon: '🀒', color: '#9370db', value: 7,   name: 'Number Tile' },
+    grape:   { icon: '🏛️', color: '#8b4513', value: 7,   name: 'Mahjong Table' }
+  },
+  'mahjong-ways-2': {
+    wild:    { icon: '🀄', color: '#ff0000', value: 100, name: 'Red Dragon' },
+    scatter: { icon: '🎴', color: '#ffd700', value: 25,  name: 'Golden Tile' },
+    seven:   { icon: '🀇', color: '#0000ff', value: 75,  name: 'Character Wan' },
+    bar:     { icon: '🀙', color: '#228b22', value: 40,  name: 'Bamboo Suo' },
+    bell:    { icon: '🀡', color: '#9400d3', value: 25,  name: 'Dots Tong' },
+    cherry:  { icon: '🏮', color: '#ff4500', value: 18,  name: 'Lantern' },
+    lemon:   { icon: '🧧', color: '#ff0000', value: 10,  name: 'Red Envelope' },
+    orange:  { icon: '🏯', color: '#daa520', value: 10,  name: 'Pagoda' },
+    plum:    { icon: '🪭', color: '#ff1493', value: 7,   name: 'Fan' },
+    grape:   { icon: '🌸', color: '#ffb6c1', value: 7,   name: 'Sakura' }
+  },
+  'dragon-legend': {
+    wild:    { icon: '🐉', color: '#ff4500', value: 100, name: 'Dragon Wild' },
+    scatter: { icon: '🐉', color: '#ffd700', value: 25,  name: 'Dragon Egg' },
+    seven:   { icon: '🐲', color: '#ff0000', value: 75,  name: 'Fire Dragon' },
+    bar:     { icon: '🔥', color: '#ff6347', value: 40,  name: 'Flame' },
+    bell:    { icon: '⚔️', color: '#c0c0c0', value: 25,  name: 'Sword' },
+    cherry:  { icon: '💎', color: '#4169e1', value: 18,  name: 'Jade Orb' },
+    lemon:   { icon: '🏯', color: '#8b4513', value: 10,  name: 'Temple' },
+    orange:  { icon: '🥋', color: '#000080', value: 10,  name: 'Yin Yang' },
+    plum:    { icon: '📿', color: '#ffd700', value: 7,   name: 'Prayer Beads' },
+    grape:   { icon: '🎋', color: '#228b22', value: 7,   name: 'Bamboo' }
+  },
+  'lucky-neko': {
+    wild:    { icon: '🐱', color: '#ff69b4', value: 100, name: 'Lucky Cat Wild' },
+    scatter: { icon: '🐟', color: '#ffa500', value: 25,  name: 'Fish' },
+    seven:   { icon: '😺', color: '#ffd700', value: 75,  name: 'Golden Neko' },
+    bar:     { icon: '🎁', color: '#ff0000', value: 40,  name: 'Gift Box' },
+    bell:    { icon: '🏮', color: '#ff4500', value: 25,  name: 'Lantern' },
+    cherry:  { icon: '🧧', color: '#dc143c', value: 18,  name: 'Red Envelope' },
+    lemon:   { icon: '🌸', color: '#ffb6c1', value: 10,  name: 'Sakura' },
+    orange:  { icon: '🏯', color: '#daa520', value: 10,  name: 'Shrine' },
+    plum:    { icon: '🪭', color: '#ff1493', value: 7,   name: 'Fan' },
+    grape:   { icon: '🎐', color: '#00ced1', value: 7,   name: 'Wind Bell' }
+  },
+  'bali-vacation': {
+    wild:    { icon: '🏝️', color: '#00ced1', value: 100, name: 'Island Wild' },
+    scatter: { icon: '🌺', color: '#ff1493', value: 25,  name: 'Hibiscus' },
+    seven:   { icon: '🌴', color: '#228b22', value: 75,  name: 'Palm Tree' },
+    bar:     { icon: '🏄', color: '#1e90ff', value: 40,  name: 'Surfboard' },
+    bell:    { icon: '🐚', color: '#fffacd', value: 25,  name: 'Seashell' },
+    cherry:  { icon: '🍹', color: '#ff6347', value: 18,  name: 'Cocktail' },
+    lemon:   { icon: '🌅', color: '#ff8c00', value: 10,  name: 'Sunset' },
+    orange:  { icon: '🥥', color: '#8b4513', value: 10,  name: 'Coconut' },
+    plum:    { icon: '🐢', color: '#2e8b57', value: 7,   name: 'Turtle' },
+    grape:   { icon: '🐠', color: '#00bfff', value: 7,   name: 'Tropical Fish' }
+  },
+  'caishen-wins': {
+    wild:    { icon: '🧧', color: '#ff0000', value: 100, name: 'Caishen Wild' },
+    scatter: { icon: '💰', color: '#ffd700', value: 25,  name: 'Gold Ingot' },
+    seven:   { icon: '🏮', color: '#ff4500', value: 75,  name: 'Lantern' },
+    bar:     { icon: '💎', color: '#00ced1', value: 40,  name: 'Jade' },
+    bell:    { icon: '🪙', color: '#daa520', value: 25,  name: 'Coin' },
+    cherry:  { icon: '📜', color: '#8b4513', value: 18,  name: 'Scroll' },
+    lemon:   { icon: '🏯', color: '#cd853f', value: 10,  name: 'Temple' },
+    orange:  { icon: '🧨', color: '#ff0000', value: 10,  name: 'Firecracker' },
+    plum:    { icon: '🎎', color: '#ff69b4', value: 7,   name: 'Statue' },
+    grape:   { icon: '🎋', color: '#228b22', value: 7,   name: 'Bamboo' }
+  },
+  'double-fortune': {
+    wild:    { icon: '🎎', color: '#ff69b4', value: 100, name: 'Double Wild' },
+    scatter: { icon: '💎', color: '#ff1493', value: 25,  name: 'Jewel' },
+    seven:   { icon: '❤️', color: '#dc143c', value: 75,  name: 'Heart' },
+    bar:     { icon: '🪭', color: '#ff4500', value: 40,  name: 'Double Fan' },
+    bell:    { icon: '🧧', color: '#ff0000', value: 25,  name: 'Red Envelope' },
+    cherry:  { icon: '🏮', color: '#ff4500', value: 18,  name: 'Lantern' },
+    lemon:   { icon: '🌸', color: '#ffb6c1', value: 10,  name: 'Blossom' },
+    orange:  { icon: '🪙', color: '#ffd700', value: 10,  name: 'Coin' },
+    plum:    { icon: '🎐', color: '#00ced1', value: 7,   name: 'Chime' },
+    grape:   { icon: '🏯', color: '#8b4513', value: 7,   name: 'Pagoda' }
+  },
+  'gem-saviour': {
+    wild:    { icon: '⚔️', color: '#4169e1', value: 100, name: 'Sword Wild' },
+    scatter: { icon: '💎', color: '#00ff7f', value: 25,  name: 'Emerald' },
+    seven:   { icon: '🔮', color: '#9400d3', value: 75,  name: 'Crystal' },
+    bar:     { icon: '🛡️', color: '#c0c0c0', value: 40,  name: 'Shield' },
+    bell:    { icon: '💅', color: '#ff69b4', value: 25,  name: 'Amethyst' },
+    cherry:  { icon: '💛', color: '#ffd700', value: 18,  name: 'Topaz' },
+    lemon:   { icon: '💙', color: '#00bfff', value: 10,  name: 'Sapphire' },
+    orange:  { icon: '❤️', color: '#ff0000', value: 10,  name: 'Ruby' },
+    plum:    { icon: '💎', color: '#e6e6fa', value: 7,   name: 'Diamond' },
+    grape:   { icon: '📿', color: '#8b4513', value: 7,   name: 'Necklace' }
+  },
+  'dragon-fortune': {
+    wild:    { icon: '🐉', color: '#ff0000', value: 100, name: 'Dragon Wild' },
+    scatter: { icon: '🥚', color: '#ffd700', value: 25,  name: 'Dragon Egg' },
+    seven:   { icon: '💎', color: '#4169e1', value: 75,  name: 'Blue Orb' },
+    bar:     { icon: '🔥', color: '#ff4500', value: 40,  name: 'Fire' },
+    bell:    { icon: '💧', color: '#00bfff', value: 25,  name: 'Water' },
+    cherry:  { icon: '🌳', color: '#228b22', value: 18,  name: 'Earth' },
+    lemon:   { icon: '💨', color: '#87ceeb', value: 10,  name: 'Wind' },
+    orange:  { icon: '⚡', color: '#ffd700', value: 10,  name: 'Thunder' },
+    plum:    { icon: '❄️', color: '#00ced1', value: 7,   name: 'Ice' },
+    grape:   { icon: '🌀', color: '#9400d3', value: 7,   name: 'Void' }
+  }
+};
+
+// Default symbols for unlisted games
+const DEFAULT_SYMBOLS = {
   wild:    { icon: '🐉', color: '#ffd700', value: 100, name: 'Wild' },
   scatter: { icon: '💎', color: '#00f5d4', value: 25,  name: 'Scatter' },
   seven:   { icon: '7️⃣', color: '#ff2d75', value: 75,  name: 'Seven' },
@@ -17,7 +213,7 @@ const SYMBOLS = {
   grape:   { icon: '🍇', color: '#8e44ad', value: 7,   name: 'Grape' }
 };
 
-const SYMBOL_KEYS = Object.keys(SYMBOLS);
+const SYMBOL_KEYS = Object.keys(DEFAULT_SYMBOLS);
 
 // Audio context
 let audioContext = null;
@@ -102,14 +298,19 @@ export default function SlotGame() {
   const [autoSpin, setAutoSpin] = useState(false);
   const [showPaytable, setShowPaytable] = useState(false);
 
+  // Get symbols for current game
+  const SYMBOLS = GAME_THEMES[slug] || DEFAULT_SYMBOLS;
+
   useEffect(() => {
     walletAPI.balance().then(({ data }) => setBalance(Number(data.balance) || 0)).catch(() => {});
     gameAPI.details(slug).then(({ data }) => {
       setGame(data);
       setBet(Number(data.min_bet));
       // Initialize reels with random symbols
+      const themeSymbols = GAME_THEMES[slug] || DEFAULT_SYMBOLS;
+      const keys = Object.keys(themeSymbols);
       const initialReels = Array(5).fill(null).map(() => 
-        Array(3).fill(null).map(() => SYMBOL_KEYS[Math.floor(Math.random() * SYMBOL_KEYS.length)])
+        Array(3).fill(null).map(() => keys[Math.floor(Math.random() * keys.length)])
       );
       setReels(initialReels);
       setReelStates([false, false, false, false, false]);
@@ -140,13 +341,15 @@ export default function SlotGame() {
       setReelStates(prev => prev.map((s, idx) => idx <= i ? false : true));
       
       // Spin this reel
+      const themeSymbols = GAME_THEMES[slug] || DEFAULT_SYMBOLS;
+      const keys = Object.keys(themeSymbols);
       const spinInterval = setInterval(() => {
         setReels(prev => {
           const newReels = [...prev];
           newReels[i] = [
-            SYMBOL_KEYS[Math.floor(Math.random() * SYMBOL_KEYS.length)],
-            SYMBOL_KEYS[Math.floor(Math.random() * SYMBOL_KEYS.length)],
-            SYMBOL_KEYS[Math.floor(Math.random() * SYMBOL_KEYS.length)]
+            keys[Math.floor(Math.random() * keys.length)],
+            keys[Math.floor(Math.random() * keys.length)],
+            keys[Math.floor(Math.random() * keys.length)]
           ];
           return newReels;
         });
@@ -225,8 +428,10 @@ export default function SlotGame() {
   };
 
   const generateRandomReels = () => {
+    const themeSymbols = GAME_THEMES[slug] || DEFAULT_SYMBOLS;
+    const keys = Object.keys(themeSymbols);
     return Array(5).fill(null).map(() => 
-      Array(3).fill(null).map(() => SYMBOL_KEYS[Math.floor(Math.random() * SYMBOL_KEYS.length)])
+      Array(3).fill(null).map(() => keys[Math.floor(Math.random() * keys.length)])
     );
   };
 
@@ -426,7 +631,8 @@ export default function SlotGame() {
                 transition: 'transform 0.2s'
               }}>
                 {col && col.map((symKey, ri) => {
-                  const sym = SYMBOLS[symKey] || SYMBOLS.cherry;
+                  const currentSymbols = GAME_THEMES[slug] || DEFAULT_SYMBOLS;
+                  const sym = currentSymbols[symKey] || currentSymbols.cherry;
                   const isWinning = winningLines.some(line => line && line[ci] === ri);
                   const isSpinning = reelStates[ci];
 

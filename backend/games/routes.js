@@ -182,7 +182,7 @@ router.post('/:gameId/spin', authenticate, gameLimiter, async (req, res) => {
 
     let result;
     try {
-      const engine = new GameEngine(engineConfig, gameSettings);
+      const engine = new GameEngine(engineConfig, gameSettings, g.slug);
       result = engine.spin(betAmount, false, {
         totalBet: parseFloat(stats.total_bet) || 0,
         totalWin: crossGameWon,  // use cross-game total so payout cap works across all games
@@ -201,7 +201,7 @@ router.post('/:gameId/spin', authenticate, gameLimiter, async (req, res) => {
     }
 
     // Re-create engine reference for jackpot check (same settings)
-    const engine = new GameEngine(engineConfig, gameSettings);
+    const engine = new GameEngine(engineConfig, gameSettings, g.slug);
 
     // Jackpot — never awarded on forced loss
     const jackpot = await query("SELECT * FROM jackpots WHERE game_id = ? AND status = 'active'", [gameId]);
@@ -319,7 +319,7 @@ router.post('/:gameId/free-spin', authenticate, gameLimiter, async (req, res) =>
     );
     const alreadyWon = parseFloat(sessionStats.rows[0].total_win) || 0;
 
-    const engine = new GameEngine(game.rows[0].config?.symbols ? game.rows[0].config : undefined, gameSettings);
+    const engine = new GameEngine(game.rows[0].config?.symbols ? game.rows[0].config : undefined, gameSettings, game.rows[0].slug);
     const result = engine.spin(game.rows[0].min_bet, true, { totalBet: 0, totalWin: alreadyWon, spins: 0 });
 
     // Free spin — force_outcome=loss must also zero the win here (engine handles it

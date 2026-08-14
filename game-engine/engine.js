@@ -23,6 +23,108 @@ class SecureRNG {
   }
 }
 
+// Game-specific themed symbol configurations
+const GAME_SYMBOL_THEMES = {
+  'fortune-tiger': {
+    symbols: [
+      { id: 'wild',   name: 'Tiger Wild',      weight: 2,  payout: { 3: 3,   4: 8,   5: 15   }, isWild: true },
+      { id: 'scatter',name: 'Lucky Red Envelope',weight: 3, payout: { 3: 1.5, 4: 3,   5: 8    }, isScatter: true },
+      { id: 'seven',  name: 'Golden Tiger',    weight: 5,  payout: { 3: 2.5, 4: 5,   5: 10   } },
+      { id: 'bar',    name: 'Lantern',         weight: 8,  payout: { 3: 2,   4: 4,   5: 8    } },
+      { id: 'bell',   name: 'Bamboo',          weight: 10, payout: { 3: 1.5, 4: 3,   5: 6    } },
+      { id: 'cherry', name: 'Mandarin',        weight: 12, payout: { 3: 1.2, 4: 2.5, 5: 5    } },
+      { id: 'lemon',  name: 'Temple',          weight: 15, payout: { 3: 1,   4: 2,   5: 3    } },
+      { id: 'orange', name: 'Daruma',          weight: 15, payout: { 3: 1,   4: 2,   5: 3    } },
+      { id: 'plum',   name: 'Fan',             weight: 15, payout: { 3: 0.8, 4: 1.5, 5: 2.5  } },
+      { id: 'grape',  name: 'Wind Chime',      weight: 15, payout: { 3: 0.8, 4: 1.5, 5: 2.5  } }
+    ]
+  },
+  'fortune-ox': {
+    symbols: [
+      { id: 'wild',   name: 'Ox Wild',         weight: 2,  payout: { 3: 3,   4: 8,   5: 15   }, isWild: true },
+      { id: 'scatter',name: 'Gold Ingot',      weight: 3,  payout: { 3: 1.5, 4: 3,   5: 8    }, isScatter: true },
+      { id: 'seven',  name: 'Water Buffalo',   weight: 5,  payout: { 3: 2.5, 4: 5,   5: 10   } },
+      { id: 'bar',    name: 'Rice',            weight: 8,  payout: { 3: 2,   4: 4,   5: 8    } },
+      { id: 'bell',   name: 'Mountain',        weight: 10, payout: { 3: 1.5, 4: 3,   5: 6    } },
+      { id: 'cherry', name: 'Cabbage',         weight: 12, payout: { 3: 1.2, 4: 2.5, 5: 5    } },
+      { id: 'lemon',  name: 'Basket',          weight: 15, payout: { 3: 1,   4: 2,   5: 3    } },
+      { id: 'orange', name: 'Bamboo',          weight: 15, payout: { 3: 1,   4: 2,   5: 3    } },
+      { id: 'plum',   name: 'Lotus',           weight: 15, payout: { 3: 0.8, 4: 1.5, 5: 2.5  } },
+      { id: 'grape',  name: 'Umbrella',        weight: 15, payout: { 3: 0.8, 4: 1.5, 5: 2.5  } }
+    ]
+  },
+  'gates-of-olympus': {
+    symbols: [
+      { id: 'wild',   name: 'Zeus Lightning',  weight: 2,  payout: { 3: 3,   4: 8,   5: 15   }, isWild: true },
+      { id: 'scatter',name: 'Temple',          weight: 3,  payout: { 3: 1.5, 4: 3,   5: 8    }, isScatter: true },
+      { id: 'seven',  name: 'Crown',           weight: 5,  payout: { 3: 2.5, 4: 5,   5: 10   } },
+      { id: 'bar',    name: 'Eagle',           weight: 8,  payout: { 3: 2,   4: 4,   5: 8    } },
+      { id: 'bell',   name: 'Lightning Bolt',  weight: 10, payout: { 3: 1.5, 4: 3,   5: 6    } },
+      { id: 'cherry', name: 'Shield',          weight: 12, payout: { 3: 1.2, 4: 2.5, 5: 5    } },
+      { id: 'lemon',  name: 'Amphora',         weight: 15, payout: { 3: 1,   4: 2,   5: 3    } },
+      { id: 'orange', name: 'Wave',            weight: 15, payout: { 3: 1,   4: 2,   5: 3    } },
+      { id: 'plum',   name: 'Owl',             weight: 15, payout: { 3: 0.8, 4: 1.5, 5: 2.5  } },
+      { id: 'grape',  name: 'Grapes',          weight: 15, payout: { 3: 0.8, 4: 1.5, 5: 2.5  } }
+    ]
+  },
+  'sweet-bonanza': {
+    symbols: [
+      { id: 'wild',   name: 'Lollipop Wild',   weight: 2,  payout: { 3: 3,   4: 8,   5: 15   }, isWild: true },
+      { id: 'scatter',name: 'Candy Scatter',   weight: 3,  payout: { 3: 1.5, 4: 3,   5: 8    }, isScatter: true },
+      { id: 'seven',  name: 'Cake',            weight: 5,  payout: { 3: 2.5, 4: 5,   5: 10   } },
+      { id: 'bar',    name: 'Donut',           weight: 8,  payout: { 3: 2,   4: 4,   5: 8    } },
+      { id: 'bell',   name: 'Cupcake',         weight: 10, payout: { 3: 1.5, 4: 3,   5: 6    } },
+      { id: 'cherry', name: 'Cookie',          weight: 12, payout: { 3: 1.2, 4: 2.5, 5: 5    } },
+      { id: 'lemon',  name: 'Ice Cream',       weight: 15, payout: { 3: 1,   4: 2,   5: 3    } },
+      { id: 'orange', name: 'Chocolate',       weight: 15, payout: { 3: 1,   4: 2,   5: 3    } },
+      { id: 'plum',   name: 'Juice Box',       weight: 15, payout: { 3: 0.8, 4: 1.5, 5: 2.5  } },
+      { id: 'grape',  name: 'Grape',           weight: 15, payout: { 3: 0.8, 4: 1.5, 5: 2.5  } }
+    ]
+  },
+  'mahjong-ways': {
+    symbols: [
+      { id: 'wild',   name: 'Red Dragon',      weight: 2,  payout: { 3: 3,   4: 8,   5: 15   }, isWild: true },
+      { id: 'scatter',name: 'Mahjong Tile',    weight: 3,  payout: { 3: 1.5, 4: 3,   5: 8    }, isScatter: true },
+      { id: 'seven',  name: 'Character One',   weight: 5,  payout: { 3: 2.5, 4: 5,   5: 10   } },
+      { id: 'bar',    name: 'Bamboo One',      weight: 8,  payout: { 3: 2,   4: 4,   5: 8    } },
+      { id: 'bell',   name: 'Dot One',         weight: 10, payout: { 3: 1.5, 4: 3,   5: 6    } },
+      { id: 'cherry', name: 'Wind Tile',       weight: 12, payout: { 3: 1.2, 4: 2.5, 5: 5    } },
+      { id: 'lemon',  name: 'Dragon Tile',     weight: 15, payout: { 3: 1,   4: 2,   5: 3    } },
+      { id: 'orange', name: 'Bamboo Tile',     weight: 15, payout: { 3: 1,   4: 2,   5: 3    } },
+      { id: 'plum',   name: 'Number Tile',     weight: 15, payout: { 3: 0.8, 4: 1.5, 5: 2.5  } },
+      { id: 'grape',  name: 'Mahjong Table',   weight: 15, payout: { 3: 0.8, 4: 1.5, 5: 2.5  } }
+    ]
+  },
+  'dragon-legend': {
+    symbols: [
+      { id: 'wild',   name: 'Dragon Wild',     weight: 2,  payout: { 3: 3,   4: 8,   5: 15   }, isWild: true },
+      { id: 'scatter',name: 'Dragon Egg',      weight: 3,  payout: { 3: 1.5, 4: 3,   5: 8    }, isScatter: true },
+      { id: 'seven',  name: 'Fire Dragon',     weight: 5,  payout: { 3: 2.5, 4: 5,   5: 10   } },
+      { id: 'bar',    name: 'Flame',           weight: 8,  payout: { 3: 2,   4: 4,   5: 8    } },
+      { id: 'bell',   name: 'Sword',           weight: 10, payout: { 3: 1.5, 4: 3,   5: 6    } },
+      { id: 'cherry', name: 'Jade Orb',        weight: 12, payout: { 3: 1.2, 4: 2.5, 5: 5    } },
+      { id: 'lemon',  name: 'Temple',          weight: 15, payout: { 3: 1,   4: 2,   5: 3    } },
+      { id: 'orange', name: 'Yin Yang',        weight: 15, payout: { 3: 1,   4: 2,   5: 3    } },
+      { id: 'plum',   name: 'Prayer Beads',    weight: 15, payout: { 3: 0.8, 4: 1.5, 5: 2.5  } },
+      { id: 'grape',  name: 'Bamboo',          weight: 15, payout: { 3: 0.8, 4: 1.5, 5: 2.5  } }
+    ]
+  },
+  'lucky-neko': {
+    symbols: [
+      { id: 'wild',   name: 'Lucky Cat Wild',  weight: 2,  payout: { 3: 3,   4: 8,   5: 15   }, isWild: true },
+      { id: 'scatter',name: 'Fish',            weight: 3,  payout: { 3: 1.5, 4: 3,   5: 8    }, isScatter: true },
+      { id: 'seven',  name: 'Golden Neko',     weight: 5,  payout: { 3: 2.5, 4: 5,   5: 10   } },
+      { id: 'bar',    name: 'Gift Box',        weight: 8,  payout: { 3: 2,   4: 4,   5: 8    } },
+      { id: 'bell',   name: 'Lantern',         weight: 10, payout: { 3: 1.5, 4: 3,   5: 6    } },
+      { id: 'cherry', name: 'Red Envelope',    weight: 12, payout: { 3: 1.2, 4: 2.5, 5: 5    } },
+      { id: 'lemon',  name: 'Sakura',          weight: 15, payout: { 3: 1,   4: 2,   5: 3    } },
+      { id: 'orange', name: 'Shrine',          weight: 15, payout: { 3: 1,   4: 2,   5: 3    } },
+      { id: 'plum',   name: 'Fan',             weight: 15, payout: { 3: 0.8, 4: 1.5, 5: 2.5  } },
+      { id: 'grape',  name: 'Wind Bell',       weight: 15, payout: { 3: 0.8, 4: 1.5, 5: 2.5  } }
+    ]
+  }
+};
+
 // Default slot configuration
 const DEFAULT_CONFIG = {
   reels: 5,
@@ -73,8 +175,13 @@ class GameEngine {
   // but the real issue is the engine constructor default maxPayout=30 overrides
   // the 0 value from DB when max_payout is intentionally 0 (unlimited).
   // Fix: only use DB value, never fall back to 30.
-  constructor(config = DEFAULT_CONFIG, gameSettings = {}) {
-    this.config = config;
+  constructor(config = DEFAULT_CONFIG, gameSettings = {}, gameSlug = null) {
+    // Apply game-specific theme if available
+    if (gameSlug && GAME_SYMBOL_THEMES[gameSlug]) {
+      this.config = { ...config, ...GAME_SYMBOL_THEMES[gameSlug] };
+    } else {
+      this.config = config;
+    }
     this.rng = new SecureRNG();
     this.settings = {
       winRate: gameSettings.win_rate !== undefined ? gameSettings.win_rate : 25,
