@@ -150,6 +150,7 @@ export const adminAPI = {
   setPlayerClass: (gameId, data) => api.post(`/games/${gameId}/player-class`, data),
   triggerJackpot: (gameId, userId) => api.post(`/games/${gameId}/trigger-jackpot`, { user_id: userId }),
   getGameStats: (gameId) => api.get(`/games/${gameId}/stats`),
+  getOnlinePlayers: () => api.get('/games/online-players'),
 };
 
 export const affiliationAPI = {

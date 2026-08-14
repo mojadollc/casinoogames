@@ -74,6 +74,41 @@ router.get('/jackpots/total', async (req, res) => {
   }
 });
 
+// Get online players per game (admin only)
+router.get('/online-players', authenticate, isAdmin, async (req, res) => {
+  try {
+    // Count distinct users active in last 5 minutes per game
+    const result = await query(`
+      SELECT 
+        g.id as game_id,
+        g.name as game_name,
+        g.slug as game_slug,
+        g.type as game_type,
+        COUNT(DISTINCT gr.user_id) as online_players
+      FROM games g
+      LEFT JOIN game_rounds gr ON gr.game_id = g.id 
+        AND gr.created_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+      WHERE g.status = 'active'
+      GROUP BY g.id, g.name, g.slug, g.type
+      ORDER BY online_players DESC, g.name ASC
+    `);
+    
+    // Get total online players (distinct across all games)
+    const totalResult = await query(`
+      SELECT COUNT(DISTINCT user_id) as total 
+      FROM game_rounds 
+      WHERE created_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+    `);
+    
+    res.json({
+      games: result.rows,
+      totalOnline: parseInt(totalResult.rows[0].total) || 0
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
     // admin/games endpoint returns win_rate from game_controls joined to games
 router.get('/', async (req, res) => {
   try {

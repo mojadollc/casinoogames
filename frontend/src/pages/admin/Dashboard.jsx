@@ -62,6 +62,7 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState(null);
   const [tab, setTab] = useState('overview');
   const [loading, setLoading] = useState(true);
+  const [onlinePlayersData, setOnlinePlayersData] = useState(null);
   const logoUrl = useLogo();
   const [logoPreview, setLogoPreview] = useState(null);
   const [logoUploading, setLogoUploading] = useState(false);
@@ -83,6 +84,19 @@ export default function AdminDashboard() {
       .then(({ data }) => setStats(data))
       .catch(() => {})
       .finally(() => setLoading(false));
+  }, []);
+
+  // Fetch online players data every 10 seconds
+  useEffect(() => {
+    const fetchOnlinePlayers = () => {
+      adminAPI.getOnlinePlayers()
+        .then(({ data }) => setOnlinePlayersData(data))
+        .catch(() => {});
+    };
+    
+    fetchOnlinePlayers();
+    const interval = setInterval(fetchOnlinePlayers, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -140,11 +154,17 @@ export default function AdminDashboard() {
       <div style={{ marginBottom: '28px' }}>
         <h1 style={{ fontSize: '22px', fontWeight: '800', color: '#e0e0f0', marginBottom: '4px' }}>Dashboard</h1>
         <p style={{ fontSize: '13px', color: '#555577' }}>Platform overview and analytics</p>
+        {onlinePlayersData && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', marginTop: '8px', padding: '6px 12px', background: 'rgba(0,245,160,0.1)', border: '1px solid rgba(0,245,160,0.3)', borderRadius: '20px' }}>
+            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#00f5a0', animation: 'pulse 2s infinite' }}></span>
+            <span style={{ fontSize: '12px', fontWeight: '700', color: '#00f5a0' }}>{onlinePlayersData.totalOnline} players online now</span>
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: '4px', marginBottom: '28px', borderBottom: '1px solid #1e1e2e', paddingBottom: '0' }}>
-        {[['overview', 'Overview'], ['affiliations', 'Affiliations'], ['branding', 'Branding']].map(([key, label]) => (
+      <div style={{ display: 'flex', gap: '4px', marginBottom: '28px', borderBottom: '1px solid #1e1e2e', paddingBottom: '0', overflowX: 'auto' }}>
+        {[['overview', 'Overview'], ['online-games', 'Online by Game'], ['affiliations', 'Affiliations'], ['branding', 'Branding']].map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)} style={{
             padding: '10px 18px', fontSize: '13px', fontWeight: '600',
             background: 'none', border: 'none',
@@ -215,6 +235,83 @@ export default function AdminDashboard() {
               </button>
             </div>
           </Card>
+        </>
+      )}
+
+      {/* ── ONLINE BY GAME ── */}
+      {tab === 'online-games' && (
+        <>
+          <div style={{ marginBottom: '20px' }}>
+            <div style={{ fontSize: '16px', fontWeight: '700', color: '#e0e0f0', marginBottom: '8px' }}>Players Currently Online (Last 5 Minutes)</div>
+            <div style={{ fontSize: '12px', color: '#555577' }}>Auto-refreshes every 10 seconds</div>
+          </div>
+          
+          {onlinePlayersData ? (
+            <Card style={{ overflow: 'hidden' }}>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #1e1e2e' }}>
+                      {['Game', 'Type', 'Online Players', 'Status'].map(h => (
+                        <th key={h} style={{ padding: '12px 20px', textAlign: 'left', color: '#555577', fontWeight: '600', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {onlinePlayersData.games.length === 0 ? (
+                      <tr><td colSpan="4" style={{ padding: '48px', textAlign: 'center', color: '#555577' }}>
+                        No players currently online
+                      </td></tr>
+                    ) : onlinePlayersData.games.map(game => (
+                      <tr key={game.game_id} style={{ borderBottom: '1px solid #1a1a2a' }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#0f0f1a'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <td style={{ padding: '14px 20px' }}>
+                          <div style={{ fontWeight: '600', color: '#e0e0f0' }}>{game.game_name}</div>
+                          <div style={{ fontSize: '11px', color: '#555577' }}>{game.game_slug}</div>
+                        </td>
+                        <td style={{ padding: '14px 20px' }}>
+                          <span style={{
+                            padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '700',
+                            background: game.game_type === 'slots' ? 'rgba(255,215,0,0.1)' 
+                              : game.game_type === 'live' ? 'rgba(167,139,250,0.1)'
+                              : game.game_type === 'fishing' ? 'rgba(0,245,160,0.1)'
+                              : 'rgba(96,165,250,0.1)',
+                            color: game.game_type === 'slots' ? '#ffd700' 
+                              : game.game_type === 'live' ? '#a78bfa'
+                              : game.game_type === 'fishing' ? '#00f5a0'
+                              : '#60a5fa',
+                          }}>{game.game_type}</span>
+                        </td>
+                        <td style={{ padding: '14px 20px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {parseInt(game.online_players) > 0 && (
+                              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#00f5a0', animation: 'pulse 2s infinite' }}></span>
+                            )}
+                            <span style={{ fontWeight: '800', color: parseInt(game.online_players) > 0 ? '#00f5a0' : '#555577', fontSize: '16px' }}>
+                              {game.online_players}
+                            </span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '14px 20px' }}>
+                          {parseInt(game.online_players) > 0 ? (
+                            <span style={{ color: '#00f5a0', fontSize: '11px' }}>● Active</span>
+                          ) : (
+                            <span style={{ color: '#555577', fontSize: '11px' }}>○ No activity</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          ) : (
+            <Card style={{ padding: '48px', textAlign: 'center', color: '#555577' }}>
+              Loading online players...
+            </Card>
+          )}
         </>
       )}
 
@@ -326,7 +423,7 @@ export default function AdminDashboard() {
           </div>
 
           <Card>
-            <div style={{ display: 'flex', gap: '8px', padding: '16px 20px', borderBottom: '1px solid #1e1e2e', flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '8px', padding: '12px 16px', borderBottom: '1px solid #1e1e2e', flexWrap: 'wrap', alignItems: 'center' }}>
               {[['all', 'All'], ['deposited', 'Deposited Only']].map(([key, label]) => (
                 <button key={key} onClick={() => setAffTab(key)} style={{
                   padding: '7px 16px', borderRadius: '6px', fontSize: '12px', fontWeight: '600',
@@ -344,9 +441,9 @@ export default function AdminDashboard() {
                 type="text" placeholder="Search username or email…"
                 value={affSearch} onChange={e => setAffSearch(e.target.value)}
                 style={{
-                  marginLeft: 'auto', padding: '8px 14px', borderRadius: '6px',
+                  flex: '1 1 160px', minWidth: '140px', padding: '8px 14px', borderRadius: '6px',
                   background: '#0f0f1a', border: '1px solid #1e1e2e',
-                  color: '#e0e0f0', fontSize: '13px', minWidth: '220px', outline: 'none',
+                  color: '#e0e0f0', fontSize: '13px', outline: 'none',
                 }}
               />
             </div>
@@ -431,3 +528,11 @@ function StatusBadge({ ok, yes, no }) {
     }}>{ok ? yes : no}</span>
   );
 }
+
+{/* Pulse animation */}
+<style>{`
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+`}</style>
