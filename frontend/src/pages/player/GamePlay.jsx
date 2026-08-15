@@ -1,27 +1,244 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { gameAPI, walletAPI } from '../../services/api';
-import SlotSymbol, { AnimatedReel, SYMBOL_COLORS } from '../../components/slots/SlotSymbols';
+import { SYMBOL_COLORS } from '../../components/slots/SlotSymbols';
+
+// Game-specific themed symbol sets (emoji icons per game)
+const GAME_SYMBOL_THEMES = {
+  'fortune-tiger': {
+    wild: { icon: '🐅', name: 'Tiger Wild', value: 100 },
+    scatter: { icon: '🧧', name: 'Lucky Red Envelope', value: 25 },
+    seven: { icon: '🐯', name: 'Golden Tiger', value: 75 },
+    bar: { icon: '🎪', name: 'Lantern', value: 40 },
+    bell: { icon: '🎋', name: 'Bamboo', value: 25 },
+    cherry: { icon: '🍊', name: 'Mandarin', value: 18 },
+    lemon: { icon: '🏯', name: 'Temple', value: 10 },
+    orange: { icon: '🎎', name: 'Daruma', value: 10 },
+    plum: { icon: '🪭', name: 'Fan', value: 7 },
+    grape: { icon: '🎐', name: 'Wind Chime', value: 7 }
+  },
+  'fortune-ox': {
+    wild: { icon: '🐂', name: 'Ox Wild', value: 100 },
+    scatter: { icon: '💰', name: 'Gold Ingot', value: 25 },
+    seven: { icon: '🐃', name: 'Water Buffalo', value: 75 },
+    bar: { icon: '🌾', name: 'Rice', value: 40 },
+    bell: { icon: '🏔️', name: 'Mountain', value: 25 },
+    cherry: { icon: '🥬', name: 'Cabbage', value: 18 },
+    lemon: { icon: '🧺', name: 'Basket', value: 10 },
+    orange: { icon: '🎋', name: 'Bamboo', value: 10 },
+    plum: { icon: '🪷', name: 'Lotus', value: 7 },
+    grape: { icon: '☔', name: 'Umbrella', value: 7 }
+  },
+  'fortune-mouse': {
+    wild: { icon: '🐭', name: 'Mouse Wild', value: 100 },
+    scatter: { icon: '🧀', name: 'Golden Cheese', value: 25 },
+    seven: { icon: '🐀', name: 'Rat King', value: 75 },
+    bar: { icon: '🍚', name: 'Rice Bowl', value: 40 },
+    bell: { icon: '🧧', name: 'Red Packet', value: 25 },
+    cherry: { icon: '🥮', name: 'Mooncake', value: 18 },
+    lemon: { icon: '🏮', name: 'Lantern', value: 10 },
+    orange: { icon: '🧨', name: 'Firecracker', value: 10 },
+    plum: { icon: '🎎', name: 'Doll', value: 7 },
+    grape: { icon: '🪙', name: 'Coin', value: 7 }
+  },
+  'gates-of-olympus': {
+    wild: { icon: '⚔️', name: 'Zeus Lightning', value: 100 },
+    scatter: { icon: '🏛️', name: 'Temple', value: 25 },
+    seven: { icon: '👑', name: 'Crown', value: 75 },
+    bar: { icon: '🦅', name: 'Eagle', value: 40 },
+    bell: { icon: '⚡', name: 'Lightning Bolt', value: 25 },
+    cherry: { icon: '🛡️', name: 'Shield', value: 18 },
+    lemon: { icon: '🏺', name: 'Amphora', value: 10 },
+    orange: { icon: '🌊', name: 'Wave', value: 10 },
+    plum: { icon: '🦉', name: 'Owl', value: 7 },
+    grape: { icon: '🍇', name: 'Grapes', value: 7 }
+  },
+  'starlight-princess': {
+    wild: { icon: '👸', name: 'Princess Wild', value: 100 },
+    scatter: { icon: '⭐', name: 'Star', value: 25 },
+    seven: { icon: '👑', name: 'Crown', value: 75 },
+    bar: { icon: '💫', name: 'Sparkle', value: 40 },
+    bell: { icon: '🌙', name: 'Moon', value: 25 },
+    cherry: { icon: '💎', name: 'Diamond', value: 18 },
+    lemon: { icon: '🌸', name: 'Cherry Blossom', value: 10 },
+    orange: { icon: '🎀', name: 'Ribbon', value: 10 },
+    plum: { icon: '💒', name: 'Castle', value: 7 },
+    grape: { icon: '🦄', name: 'Unicorn', value: 7 }
+  },
+  'sweet-bonanza': {
+    wild: { icon: '🍭', name: 'Lollipop Wild', value: 100 },
+    scatter: { icon: '🍬', name: 'Candy Scatter', value: 25 },
+    seven: { icon: '🎂', name: 'Cake', value: 75 },
+    bar: { icon: '🍩', name: 'Donut', value: 40 },
+    bell: { icon: '🧁', name: 'Cupcake', value: 25 },
+    cherry: { icon: '🍪', name: 'Cookie', value: 18 },
+    lemon: { icon: '🍦', name: 'Ice Cream', value: 10 },
+    orange: { icon: '🍫', name: 'Chocolate', value: 10 },
+    plum: { icon: '🧃', name: 'Juice Box', value: 7 },
+    grape: { icon: '🍇', name: 'Grape', value: 7 }
+  },
+  'wild-bandito': {
+    wild: { icon: '🤠', name: 'Bandito Wild', value: 100 },
+    scatter: { icon: '💰', name: 'Money Bag', value: 25 },
+    seven: { icon: '🌵', name: 'Cactus', value: 75 },
+    bar: { icon: '🪣', name: 'Gold Pan', value: 40 },
+    bell: { icon: '🦎', name: 'Lizard', value: 25 },
+    cherry: { icon: '🐎', name: 'Horse', value: 18 },
+    lemon: { icon: '🌄', name: 'Sunset', value: 10 },
+    orange: { icon: '🎯', name: 'Target', value: 10 },
+    plum: { icon: '🪨', name: 'Rock', value: 7 },
+    grape: { icon: '🤠', name: 'Cowboy Hat', value: 7 }
+  },
+  'mahjong-ways': {
+    wild: { icon: '🀄', name: 'Red Dragon', value: 100 },
+    scatter: { icon: '🎴', name: 'Mahjong Tile', value: 25 },
+    seven: { icon: '🀇', name: 'Character One', value: 75 },
+    bar: { icon: '🀙', name: 'Bamboo One', value: 40 },
+    bell: { icon: '🀡', name: 'Dot One', value: 25 },
+    cherry: { icon: '🀐', name: 'Wind Tile', value: 18 },
+    lemon: { icon: '🀅', name: 'Dragon Tile', value: 10 },
+    orange: { icon: '🀝', name: 'Bamboo Tile', value: 10 },
+    plum: { icon: '🀒', name: 'Number Tile', value: 7 },
+    grape: { icon: '🏛️', name: 'Mahjong Table', value: 7 }
+  },
+  'mahjong-ways-2': {
+    wild: { icon: '🀄', name: 'Red Dragon', value: 100 },
+    scatter: { icon: '🎴', name: 'Golden Tile', value: 25 },
+    seven: { icon: '🀇', name: 'Character Wan', value: 75 },
+    bar: { icon: '🀙', name: 'Bamboo Suo', value: 40 },
+    bell: { icon: '🀡', name: 'Dots Tong', value: 25 },
+    cherry: { icon: '🏮', name: 'Lantern', value: 18 },
+    lemon: { icon: '🧧', name: 'Red Envelope', value: 10 },
+    orange: { icon: '🏯', name: 'Pagoda', value: 10 },
+    plum: { icon: '🪭', name: 'Fan', value: 7 },
+    grape: { icon: '🌸', name: 'Sakura', value: 7 }
+  },
+  'dragon-legend': {
+    wild: { icon: '🐉', name: 'Dragon Wild', value: 100 },
+    scatter: { icon: '🐉', name: 'Dragon Egg', value: 25 },
+    seven: { icon: '🐲', name: 'Fire Dragon', value: 75 },
+    bar: { icon: '🔥', name: 'Flame', value: 40 },
+    bell: { icon: '⚔️', name: 'Sword', value: 25 },
+    cherry: { icon: '💎', name: 'Jade Orb', value: 18 },
+    lemon: { icon: '🏯', name: 'Temple', value: 10 },
+    orange: { icon: '🥋', name: 'Yin Yang', value: 10 },
+    plum: { icon: '📿', name: 'Prayer Beads', value: 7 },
+    grape: { icon: '🎋', name: 'Bamboo', value: 7 }
+  },
+  'lucky-neko': {
+    wild: { icon: '🐱', name: 'Lucky Cat Wild', value: 100 },
+    scatter: { icon: '🐟', name: 'Fish', value: 25 },
+    seven: { icon: '😺', name: 'Golden Neko', value: 75 },
+    bar: { icon: '🎁', name: 'Gift Box', value: 40 },
+    bell: { icon: '🏮', name: 'Lantern', value: 25 },
+    cherry: { icon: '🧧', name: 'Red Envelope', value: 18 },
+    lemon: { icon: '🌸', name: 'Sakura', value: 10 },
+    orange: { icon: '🏯', name: 'Shrine', value: 10 },
+    plum: { icon: '🪭', name: 'Fan', value: 7 },
+    grape: { icon: '🎐', name: 'Wind Bell', value: 7 }
+  },
+  'bali-vacation': {
+    wild: { icon: '🏝️', name: 'Island Wild', value: 100 },
+    scatter: { icon: '🌺', name: 'Hibiscus', value: 25 },
+    seven: { icon: '🌴', name: 'Palm Tree', value: 75 },
+    bar: { icon: '🏄', name: 'Surfboard', value: 40 },
+    bell: { icon: '🐚', name: 'Seashell', value: 25 },
+    cherry: { icon: '🍹', name: 'Cocktail', value: 18 },
+    lemon: { icon: '🌅', name: 'Sunset', value: 10 },
+    orange: { icon: '🥥', name: 'Coconut', value: 10 },
+    plum: { icon: '🐢', name: 'Turtle', value: 7 },
+    grape: { icon: '🐠', name: 'Tropical Fish', value: 7 }
+  },
+  'caishen-wins': {
+    wild: { icon: '🧧', name: 'Caishen Wild', value: 100 },
+    scatter: { icon: '💰', name: 'Gold Ingot', value: 25 },
+    seven: { icon: '🏮', name: 'Lantern', value: 75 },
+    bar: { icon: '💎', name: 'Jade', value: 40 },
+    bell: { icon: '🪙', name: 'Coin', value: 25 },
+    cherry: { icon: '📜', name: 'Scroll', value: 18 },
+    lemon: { icon: '🏯', name: 'Temple', value: 10 },
+    orange: { icon: '🧨', name: 'Firecracker', value: 10 },
+    plum: { icon: '🎎', name: 'Statue', value: 7 },
+    grape: { icon: '🎋', name: 'Bamboo', value: 7 }
+  },
+  'double-fortune': {
+    wild: { icon: '🎎', name: 'Double Wild', value: 100 },
+    scatter: { icon: '💎', name: 'Jewel', value: 25 },
+    seven: { icon: '❤️', name: 'Heart', value: 75 },
+    bar: { icon: '🪭', name: 'Double Fan', value: 40 },
+    bell: { icon: '🧧', name: 'Red Envelope', value: 25 },
+    cherry: { icon: '🏮', name: 'Lantern', value: 18 },
+    lemon: { icon: '🌸', name: 'Blossom', value: 10 },
+    orange: { icon: '🪙', name: 'Coin', value: 10 },
+    plum: { icon: '🎐', name: 'Chime', value: 7 },
+    grape: { icon: '🏯', name: 'Pagoda', value: 7 }
+  },
+  'gem-saviour': {
+    wild: { icon: '⚔️', name: 'Sword Wild', value: 100 },
+    scatter: { icon: '💎', name: 'Emerald', value: 25 },
+    seven: { icon: '🔮', name: 'Crystal', value: 75 },
+    bar: { icon: '🛡️', name: 'Shield', value: 40 },
+    bell: { icon: '💅', name: 'Amethyst', value: 25 },
+    cherry: { icon: '💛', name: 'Topaz', value: 18 },
+    lemon: { icon: '💙', name: 'Sapphire', value: 10 },
+    orange: { icon: '❤️', name: 'Ruby', value: 10 },
+    plum: { icon: '💎', name: 'Diamond', value: 7 },
+    grape: { icon: '📿', name: 'Necklace', value: 7 }
+  },
+  'dragon-fortune': {
+    wild: { icon: '🐉', name: 'Dragon Wild', value: 100 },
+    scatter: { icon: '🥚', name: 'Dragon Egg', value: 25 },
+    seven: { icon: '💎', name: 'Blue Orb', value: 75 },
+    bar: { icon: '🔥', name: 'Fire', value: 40 },
+    bell: { icon: '💧', name: 'Water', value: 25 },
+    cherry: { icon: '🌳', name: 'Earth', value: 18 },
+    lemon: { icon: '💨', name: 'Wind', value: 10 },
+    orange: { icon: '⚡', name: 'Thunder', value: 10 },
+    plum: { icon: '❄️', name: 'Ice', value: 7 },
+    grape: { icon: '🌀', name: 'Void', value: 7 }
+  }
+};
+
+// Default symbols for unlisted games
+const DEFAULT_SYMBOLS = {
+  wild: { icon: '🐉', name: 'Wild', value: 100 },
+  scatter: { icon: '💎', name: 'Scatter', value: 25 },
+  seven: { icon: '7️⃣', name: 'Seven', value: 75 },
+  bar: { icon: '📊', name: 'Bar', value: 40 },
+  bell: { icon: '🔔', name: 'Bell', value: 25 },
+  cherry: { icon: '🍒', name: 'Cherry', value: 18 },
+  lemon: { icon: '🍋', name: 'Lemon', value: 10 },
+  orange: { icon: '🍊', name: 'Orange', value: 10 },
+  plum: { icon: '🟣', name: 'Plum', value: 7 },
+  grape: { icon: '🍇', name: 'Grape', value: 7 }
+};
 
 // Game-specific gradient backgrounds (matching game thumbnails)
 const GAME_THEMES = {
-  'fortune-tiger': { bg: 'linear-gradient(135deg, #FF6B35 0%, #F7931E 50%, #FFD700 100%)', accent: '#FF6B35' },
-  'fortune-ox': { bg: 'linear-gradient(135deg, #C41E3A 0%, #8B0000 50%, #FFD700 100%)', accent: '#C41E3A' },
-  'fortune-mouse': { bg: 'linear-gradient(135deg, #FF69B4 0%, #FF1493 50%, #C71585 100%)', accent: '#FF69B4' },
-  'gates-of-olympus': { bg: 'linear-gradient(135deg, #4B0082 0%, #8B008B 50%, #FFD700 100%)', accent: '#4B0082' },
-  'starlight-princess': { bg: 'linear-gradient(135deg, #FF69B4 0%, #FFB6C1 50%, #FFD700 100%)', accent: '#FF69B4' },
-  'sweet-bonanza': { bg: 'linear-gradient(135deg, #FF69B4 0%, #FFB6C1 50%, #FFD700 100%)', accent: '#FF69B4' },
-  'wild-bandito': { bg: 'linear-gradient(135deg, #8B4513 0%, #D2691E 50%, #FFD700 100%)', accent: '#8B4513' },
-  'mahjong-ways': { bg: 'linear-gradient(135deg, #DC143C 0%, #B22222 50%, #FFD700 100%)', accent: '#DC143C' },
-  'mahjong-ways-2': { bg: 'linear-gradient(135deg, #DC143C 0%, #B22222 50%, #FFD700 100%)', accent: '#DC143C' },
-  'dragon-legend': { bg: 'linear-gradient(135deg, #FF4500 0%, #FF6347 50%, #FFD700 100%)', accent: '#FF4500' },
-  'lucky-neko': { bg: 'linear-gradient(135deg, #FF69B4 0%, #FFB6C1 50%, #FFD700 100%)', accent: '#FF69B4' },
-  'bali-vacation': { bg: 'linear-gradient(135deg, #00CED1 0%, #40E0D0 50%, #FFD700 100%)', accent: '#00CED1' },
-  'caishen-wins': { bg: 'linear-gradient(135deg, #FF0000 0%, #DC143C 50%, #FFD700 100%)', accent: '#FF0000' },
-  'double-fortune': { bg: 'linear-gradient(135deg, #FF1493 0%, #C71585 50%, #FFD700 100%)', accent: '#FF1493' },
-  'gem-saviour': { bg: 'linear-gradient(135deg, #9370DB 0%, #8A2BE2 50%, #FFD700 100%)', accent: '#9370DB' },
-  'dragon-fortune': { bg: 'linear-gradient(135deg, #FF4500 0%, #FF6347 50%, #FFD700 100%)', accent: '#FF4500' },
-  'default': { bg: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)', accent: '#FFD700' }
+  'fortune-tiger': { bg: 'linear-gradient(135deg, #FF6B35 0%, #F7931E 50%, #FFD700 100%)', accent: '#FF6B35', icon: '🐅' },
+  'fortune-ox': { bg: 'linear-gradient(135deg, #C41E3A 0%, #8B0000 50%, #FFD700 100%)', accent: '#C41E3A', icon: '🐂' },
+  'fortune-mouse': { bg: 'linear-gradient(135deg, #FF69B4 0%, #FF1493 50%, #C71585 100%)', accent: '#FF69B4', icon: '🐭' },
+  'gates-of-olympus': { bg: 'linear-gradient(135deg, #4B0082 0%, #8B008B 50%, #FFD700 100%)', accent: '#4B0082', icon: '⚔️' },
+  'starlight-princess': { bg: 'linear-gradient(135deg, #FF69B4 0%, #FFB6C1 50%, #FFD700 100%)', accent: '#FF69B4', icon: '👸' },
+  'sweet-bonanza': { bg: 'linear-gradient(135deg, #FF69B4 0%, #FFB6C1 50%, #FFD700 100%)', accent: '#FF69B4', icon: '🍭' },
+  'wild-bandito': { bg: 'linear-gradient(135deg, #8B4513 0%, #D2691E 50%, #FFD700 100%)', accent: '#8B4513', icon: '🤠' },
+  'mahjong-ways': { bg: 'linear-gradient(135deg, #DC143C 0%, #B22222 50%, #FFD700 100%)', accent: '#DC143C', icon: '🀄' },
+  'mahjong-ways-2': { bg: 'linear-gradient(135deg, #DC143C 0%, #B22222 50%, #FFD700 100%)', accent: '#DC143C', icon: '🀄' },
+  'dragon-legend': { bg: 'linear-gradient(135deg, #FF4500 0%, #FF6347 50%, #FFD700 100%)', accent: '#FF4500', icon: '🐉' },
+  'lucky-neko': { bg: 'linear-gradient(135deg, #FF69B4 0%, #FFB6C1 50%, #FFD700 100%)', accent: '#FF69B4', icon: '🐱' },
+  'bali-vacation': { bg: 'linear-gradient(135deg, #00CED1 0%, #40E0D0 50%, #FFD700 100%)', accent: '#00CED1', icon: '🏝️' },
+  'caishen-wins': { bg: 'linear-gradient(135deg, #FF0000 0%, #DC143C 50%, #FFD700 100%)', accent: '#FF0000', icon: '🧧' },
+  'double-fortune': { bg: 'linear-gradient(135deg, #FF1493 0%, #C71585 50%, #FFD700 100%)', accent: '#FF1493', icon: '🎎' },
+  'gem-saviour': { bg: 'linear-gradient(135deg, #9370DB 0%, #8A2BE2 50%, #FFD700 100%)', accent: '#9370DB', icon: '⚔️' },
+  'dragon-fortune': { bg: 'linear-gradient(135deg, #FF4500 0%, #FF6347 50%, #FFD700 100%)', accent: '#FF4500', icon: '🐉' },
+  'default': { bg: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)', accent: '#FFD700', icon: '🐉' }
+};
+
+// Get themed symbol for a symbol ID
+const getThemedSymbol = (slug, symbolId) => {
+  const theme = GAME_SYMBOL_THEMES[slug];
+  if (theme && theme[symbolId]) return theme[symbolId];
+  return DEFAULT_SYMBOLS[symbolId] || { icon: '❓', name: symbolId, value: 5 };
 };
 
 // Audio context for sound effects
@@ -132,6 +349,7 @@ export default function GamePlay() {
   }, [slug]);
 
   const gameTheme = getGameTheme();
+  const currentSymbols = GAME_SYMBOL_THEMES[slug] || DEFAULT_SYMBOLS;
 
   useEffect(() => {
     walletAPI.balance().then(({ data }) => setBalance(Number(data.balance) || 0)).catch(() => {});
@@ -325,7 +543,7 @@ export default function GamePlay() {
           WebkitTextFillColor: 'transparent',
           marginBottom: '8px'
         }}>
-          {game.name}
+          {gameTheme.icon} {game.name} {gameTheme.icon}
         </h2>
         <div style={{ display: 'flex', justifyContent: 'center', gap: '12px' }}>
           <span style={{
@@ -382,7 +600,7 @@ export default function GamePlay() {
               zIndex: 1
             }} />
 
-            {/* Reels — animated strip scroll */}
+            {/* Reels — animated strip scroll with themed emoji symbols */}
             <div style={{
               display: 'flex',
               justifyContent: 'center',
@@ -396,7 +614,7 @@ export default function GamePlay() {
                   winningSymbols.includes(`${ci}-${ri}`) && !spinProgress[ci]
                 );
                 return (
-                  <AnimatedReel
+                  <ThemedReel
                     key={ci}
                     finalSymbols={col}
                     spinning={!!spinProgress[ci]}
@@ -404,6 +622,7 @@ export default function GamePlay() {
                     gap={6}
                     winningRows={winningRows}
                     accent={gameTheme.accent}
+                    gameSlug={slug}
                   />
                 );
               })}
@@ -611,7 +830,7 @@ export default function GamePlay() {
         {showPaytable ? '▲ Hide Paytable' : '▼ Show Paytable'}
       </button>
 
-      {/* Paytable */}
+      {/* Paytable - Game-themed symbols */}
       {showPaytable && (
         <div style={{
           marginTop: '12px',
@@ -620,28 +839,28 @@ export default function GamePlay() {
           borderRadius: '12px',
           border: '1px solid rgba(255, 215, 0, 0.1)'
         }}>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(2, 1fr)',
-            gap: '12px',
-            fontSize: '12px'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '20px' }}>👑</span>
-              <span style={{ color: '#888' }}>Wild - Substitutes all</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '20px' }}>💎</span>
-              <span style={{ color: '#888' }}>3+ Scatter = Free Spins</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '20px' }}>7️⃣</span>
-              <span style={{ color: '#888' }}>Highest payout</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '20px' }}>🔔</span>
-              <span style={{ color: '#888' }}>Bonus multiplier</span>
-            </div>
+          <div style={{ display: 'grid', gap: '10px' }}>
+            {Object.entries(currentSymbols).slice(0, 6).map(([key, sym]) => (
+              <div key={key} style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '10px 12px',
+                background: 'rgba(255, 215, 0, 0.05)',
+                borderRadius: '10px'
+              }}>
+                <span style={{ fontSize: '28px', width: '36px', textAlign: 'center' }}>{sym.icon}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '13px', fontWeight: '600', color: '#FFF' }}>{sym.name}</div>
+                  <div style={{ fontSize: '11px', color: '#888' }}>
+                    {key === 'wild' ? 'Substitutes all symbols' : key === 'scatter' ? '3+ = Free Spins' : `${sym.value}x payout`}
+                  </div>
+                </div>
+                <div style={{ padding: '4px 10px', background: 'rgba(255, 215, 0, 0.15)', borderRadius: '8px', color: '#FFD700', fontWeight: '700', fontSize: '12px' }}>
+                  up to {sym.value}x
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -676,6 +895,10 @@ export default function GamePlay() {
           0%, 100% { transform: scale(1); }
           50% { transform: scale(1.08); }
         }
+        @keyframes themedWinPulse {
+          0%, 100% { transform: scale(1.08); box-shadow: 0 0 20px currentColor; }
+          50% { transform: scale(1.12); box-shadow: 0 0 30px currentColor; }
+        }
         @keyframes symbolSpin {
           0% { transform: translateY(-10px); opacity: 0.3; }
           50% { transform: translateY(0); opacity: 1; }
@@ -705,6 +928,96 @@ export default function GamePlay() {
       `}</style>
     </div>
   );
+}
+
+// ThemedReel — renders emoji symbols based on game theme
+function ThemedReel({ finalSymbols, spinning, cellSize = 58, gap = 6, winningRows = [], accent = '#FFD700', gameSlug }) {
+  const [phase, setPhase] = useState('idle');
+  const [strip, setStrip] = useState(() =>
+    (finalSymbols && finalSymbols.length >= 3) ? finalSymbols.slice(0, 3) : randomThemedSymbols(gameSlug)
+  );
+  const [displayOffset, setDisplayOffset] = useState(0);
+  const prevSpinning = useRef(false);
+
+  // Themed symbol renderer
+  const renderThemedSymbol = (symbolId, isWinning, idx) => {
+    const themed = getThemedSymbol(gameSlug, symbolId);
+    const color = SYMBOL_COLORS[symbolId] || '#FFD700';
+    return (
+      <div
+        key={`${symbolId}-${idx}`}
+        style={{
+          width: cellSize,
+          height: cellSize,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: cellSize * 0.6,
+          borderRadius: 12,
+          background: isWinning
+            ? `linear-gradient(145deg, ${color}30, ${color}15)`
+            : 'linear-gradient(145deg, rgba(26, 10, 46, 0.9), rgba(13, 5, 21, 0.9))',
+          border: isWinning ? `2px solid ${color}` : '2px solid rgba(255, 215, 0, 0.2)',
+          boxShadow: isWinning ? `0 0 20px ${color}, inset 0 0 10px ${color}20` : '0 2px 8px rgba(0, 0, 0, 0.5)',
+          transition: 'all 0.3s ease',
+          animation: isWinning ? 'themedWinPulse 0.4s ease infinite' : 'none',
+          transform: isWinning ? 'scale(1.08)' : 'scale(1)',
+        }}
+      >
+        {themed.icon}
+      </div>
+    );
+  };
+
+  // Handle spin start/stop
+  useEffect(() => {
+    if (spinning && !prevSpinning.current) {
+      setPhase('spinning');
+    }
+    if (!spinning && prevSpinning.current && finalSymbols) {
+      setPhase('stopping');
+      const finals = finalSymbols.slice(0, 3).map(s => (s && s.id) || s || 'cherry');
+      setStrip(finals);
+      setTimeout(() => setPhase('stopped'), 400);
+    }
+    prevSpinning.current = spinning;
+  }, [spinning, finalSymbols]);
+
+  // Update display when stopped
+  useEffect(() => {
+    if (phase === 'stopped' && finalSymbols && finalSymbols.length >= 3) {
+      setStrip(finalSymbols.slice(0, 3).map(s => (s && s.id) || s || 'cherry'));
+    }
+  }, [finalSymbols, phase]);
+
+  const symbols = Array.isArray(strip) && strip.length >= 3 ? strip : randomThemedSymbols(gameSlug);
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap,
+        padding: '4px',
+        background: 'linear-gradient(180deg, rgba(0,0,0,0.6), rgba(15,15,30,0.4), rgba(0,0,0,0.6))',
+        borderRadius: 14,
+        border: `1px solid ${spinning ? accent + 'aa' : 'rgba(255,215,0,0.2)'}`,
+        boxShadow: spinning ? `inset 0 0 16px ${accent}44, 0 0 10px ${accent}30` : 'inset 0 0 10px rgba(0,0,0,0.6)',
+        transition: 'border 0.2s, box-shadow 0.2s',
+      }}
+    >
+      {symbols.map((symId, ri) => {
+        const symbolId = typeof symId === 'object' ? symId.id : symId;
+        const isWinning = winningRows.includes(ri) && phase !== 'spinning';
+        return renderThemedSymbol(symbolId, isWinning, ri);
+      })}
+    </div>
+  );
+}
+
+function randomThemedSymbols(gameSlug) {
+  const keys = Object.keys(GAME_SYMBOL_THEMES[gameSlug] || DEFAULT_SYMBOLS);
+  return [0, 1, 2].map(() => keys[Math.floor(Math.random() * keys.length)]);
 }
 
 // Confetti component
