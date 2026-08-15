@@ -270,26 +270,33 @@ export default function SlotGame() {
     }
   }, [autoSpin, spinning, balance, bet]);
 
-  // spinReels: sets final symbols and triggers GSAP AnimatedReel spin.
-  // AnimatedReel handles its own staggered stop via stopDelay + onStop callback.
+  // spinReels: triggers spin and returns a Promise that resolves when all 5 reels stop
+  const spinResolveRef = useRef(null);
+  const stoppedCountRef = useRef(0);
+
   const spinReels = (finalReels) => {
-    setWinningLines([]);
-    setLastWin(0);
-    setMessage('');
-    setBigWinAmount(0);
-    setReels(finalReels);
-    setSpinning(true);
-    sounds.play('whoosh');
+    return new Promise((resolve) => {
+      spinResolveRef.current = resolve;
+      stoppedCountRef.current = 0;
+      setWinningLines([]);
+      setLastWin(0);
+      setMessage('');
+      setBigWinAmount(0);
+      setReels(finalReels);
+      setSpinning(true);
+      sounds.play('whoosh');
+    });
   };
 
-  // Called by each AnimatedReel's onStop — fires clack + checks if all done
-  const stoppedCountRef = useRef(0);
-  const handleReelStop = useCallback((reelIndex) => {
+  // Called by each AnimatedReel's onStop — fires clack, resolves promise when all 5 done
+  const handleReelStop = useCallback(() => {
     sounds.play('clack');
     stoppedCountRef.current += 1;
     if (stoppedCountRef.current === 5) {
       stoppedCountRef.current = 0;
       setSpinning(false);
+      spinResolveRef.current?.();
+      spinResolveRef.current = null;
     }
   }, [sounds]);
 
@@ -311,7 +318,7 @@ export default function SlotGame() {
     try {
       const { data } = await gameAPI.spin(game.id, bet);
       const finalGrid = normalizeGrid(data.grid);
-      spinReels(finalGrid);
+      await spinReels(finalGrid);
 
       setBalance(data.balance ?? data.newBalance ?? balance);
       setLastWin(data.totalWin || 0);
@@ -369,7 +376,7 @@ export default function SlotGame() {
     try {
       const { data } = await gameAPI.freeSpin(game.id);
       const finalGrid = normalizeGrid(data.grid);
-      spinReels(finalGrid);
+      await spinReels(finalGrid);
       setBalance(data.balance ?? data.newBalance ?? balance);
       setLastWin(data.totalWin || 0);
       setFreeSpins(data.freeSpinsRemaining ?? Math.max(0, freeSpins - 1));
