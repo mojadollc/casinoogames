@@ -393,53 +393,50 @@ const playReelStopSound = () => {
   spring.start(t); spring.stop(t + 0.18);
 };
 
-// ── WIN: coin cascade + bell melody ─────────────────────────────────────────
-const playWinSound = () => {
-  const ac = getAC();
-  const t0 = ac.currentTime;
+// ── WIN: pure coin sound — cascade of metallic clinks ─────────────────────────
+const playWinSound = (big = false) => {
+  const ac   = getAC();
+  const t0   = ac.currentTime;
+  const count = big ? 18 : 10;
+  const dur   = big ? 1.4 : 0.8;
 
-  // Coin cascade — rapid noise bursts mimicking coins dropping
-  for (let i = 0; i < 8; i++) {
-    const ct = t0 + i * 0.055;
-    const coinBuf = makeNoiseBuffer(ac);
-    const coin    = ac.createBufferSource();
-    coin.buffer   = coinBuf;
-    const bpf     = ac.createBiquadFilter();
-    bpf.type      = 'bandpass';
-    bpf.frequency.value = 2800 + Math.random() * 800;
-    bpf.Q.value   = 12;
-    const cGain   = ac.createGain();
-    cGain.gain.setValueAtTime(0.22, ct);
-    cGain.gain.exponentialRampToValueAtTime(0.001, ct + 0.07);
-    coin.connect(bpf); bpf.connect(cGain); cGain.connect(ac.destination);
-    coin.start(ct); coin.stop(ct + 0.07);
+  for (let i = 0; i < count; i++) {
+    const ct  = t0 + (i / count) * dur;
+    // Each coin = noise burst through tight bandpass (metallic ring)
+    const buf = makeNoiseBuffer(ac);
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    const bpf  = ac.createBiquadFilter();
+    bpf.type   = 'bandpass';
+    bpf.frequency.value = 2600 + Math.random() * 1200; // 2600–3800 Hz range
+    bpf.Q.value = 18;  // very tight = pure metallic ring
+    const g    = ac.createGain();
+    g.gain.setValueAtTime(0.28, ct);
+    g.gain.exponentialRampToValueAtTime(0.001, ct + 0.09);
+    src.connect(bpf); bpf.connect(g); g.connect(ac.destination);
+    src.start(ct); src.stop(ct + 0.09);
+
+    // Resonant body tone under each clink
+    const ring  = ac.createOscillator();
+    const rGain = ac.createGain();
+    ring.type   = 'sine';
+    ring.frequency.value = 1400 + Math.random() * 600;
+    rGain.gain.setValueAtTime(0.12, ct);
+    rGain.gain.exponentialRampToValueAtTime(0.001, ct + 0.14);
+    ring.connect(rGain); rGain.connect(ac.destination);
+    ring.start(ct); ring.stop(ct + 0.14);
   }
 
-  // Bell melody — C5 E5 G5 C6 (major chord arpeggio)
-  const melody = [523.25, 659.25, 783.99, 1046.50];
-  melody.forEach((freq, i) => {
-    const t = t0 + 0.12 + i * 0.13;
-    // Bell body: sine with fast attack, slow decay
-    const bell     = ac.createOscillator();
-    const bellGain = ac.createGain();
-    bell.type      = 'sine';
-    bell.frequency.value = freq;
-    bellGain.gain.setValueAtTime(0, t);
-    bellGain.gain.linearRampToValueAtTime(0.3, t + 0.01);  // sharp attack
-    bellGain.gain.exponentialRampToValueAtTime(0.001, t + 0.5); // long decay
-    bell.connect(bellGain); bellGain.connect(ac.destination);
-    bell.start(t); bell.stop(t + 0.5);
-
-    // Bell overtone: triangle at 2x freq
-    const ot     = ac.createOscillator();
-    const otGain = ac.createGain();
-    ot.type      = 'triangle';
-    ot.frequency.value = freq * 2.756; // inharmonic partial = bell character
-    otGain.gain.setValueAtTime(0.08, t);
-    otGain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-    ot.connect(otGain); otGain.connect(ac.destination);
-    ot.start(t); ot.stop(t + 0.25);
-  });
+  // Rising chime at the end (signals win resolved)
+  if (big) {
+    [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
+      const t = t0 + dur + i * 0.1;
+      const o = ac.createOscillator(); const g = ac.createGain();
+      o.type = 'sine'; o.frequency.value = freq;
+      g.gain.setValueAtTime(0.22, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+      o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + 0.4);
+    });
+  }
 };
 
 // ── JACKPOT: full fanfare + coin shower + shimmer tail ───────────────────────
@@ -518,6 +515,7 @@ export default function GamePlay() {
   const [winningSymbols, setWinningSymbols] = useState([]);
   const [jackpotWon, setJackpotWon] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [coinRain, setCoinRain] = useState({ active: false, big: false });
   const [bigWin, setBigWin] = useState(false);
   const [gameType, setGameType] = useState('slots');
   const [showPaytable, setShowPaytable] = useState(false);
@@ -552,9 +550,9 @@ export default function GamePlay() {
 
   // Reel strip animation is handled by <AnimatedReel /> — no random flicker interval needed.
 
-  const triggerConfetti = () => {
-    setShowConfetti(true);
-    setTimeout(() => setShowConfetti(false), 4000);
+  const triggerCoinRain = (big = false) => {
+    setCoinRain({ active: true, big });
+    setTimeout(() => setCoinRain({ active: false, big: false }), big ? 5000 : 3500);
   };
 
   const quickBets = [10, 50, 100, 500, 1000];
@@ -633,13 +631,14 @@ export default function GamePlay() {
       setLastWin(data.totalWin);
 
       if (data.totalWin > 0) {
-        playWinSound();
+        const isBig = data.totalWin >= bet * 10;
+        playWinSound(isBig);
         animateWinCounter(data.totalWin);
+        triggerCoinRain(isBig);
         if (data.totalWin >= bet * 25) {
           setBigWin(true);
-          triggerConfetti();
           setMessage(`BIG WIN! ₱${data.totalWin.toLocaleString()}`);
-        } else if (data.totalWin >= bet * 10) {
+        } else if (isBig) {
           setBigWin(true);
           setMessage(`NICE WIN! ₱${data.totalWin.toLocaleString()}`);
         } else {
@@ -673,7 +672,7 @@ export default function GamePlay() {
       if (data.jackpotWon) {
         setJackpotWon(true);
         playJackpotSound();
-        triggerConfetti();
+        triggerCoinRain(true);
         setMessage(`JACKPOT!!! ₱${data.jackpotWon.toLocaleString()}`);
       }
     } catch (err) {
@@ -698,9 +697,10 @@ export default function GamePlay() {
       setLastWin(data.totalWin);
       setFreeSpins(data.freeSpinsRemaining);
       if (data.totalWin > 0) {
-        playWinSound();
+        playWinSound(data.totalWin >= bet * 10);
+        triggerCoinRain(data.totalWin >= bet * 10);
         setMessage(`Free spin win: ₱${data.totalWin.toLocaleString()}`);
-        if (data.totalWin >= bet * 25) triggerConfetti();
+        if (data.totalWin >= bet * 25) triggerCoinRain(true);
       }
     } catch (err) {
       setMessage(err.response?.data?.error || 'Free spin failed');
@@ -722,8 +722,8 @@ export default function GamePlay() {
       minHeight: '100vh',
       padding: '16px'
     }}>
-      {/* Confetti */}
-      {showConfetti && <Confetti />}
+      {/* Coin Rain */}
+      {coinRain.active && <CoinRain big={coinRain.big} />}
 
       {/* Header */}
       <div style={{
@@ -1409,40 +1409,55 @@ function randomThemedSymbols(gameSlug) {
   return [0, 1, 2].map(() => keys[Math.floor(Math.random() * keys.length)]);
 }
 
-// Confetti component
-function Confetti() {
-  const colors = ['#FFD700', '#FF1493', '#00D9FF', '#FFA500', '#FF69B4', '#FFF'];
-  const confetti = Array.from({ length: 60 }, (_, i) => ({
+// ── CoinRain ────────────────────────────────────────────────────────────────
+function CoinRain({ big = false }) {
+  const count = big ? 60 : 30;
+  const coins = Array.from({ length: count }, (_, i) => ({
     id: i,
-    left: Math.random() * 100,
-    delay: Math.random() * 2,
-    color: colors[Math.floor(Math.random() * colors.length)],
-    size: 6 + Math.random() * 10,
-    duration: 2 + Math.random() * 2
+    left:     2 + Math.random() * 96,          // % across screen
+    delay:    Math.random() * 1.8,             // stagger start
+    duration: 1.6 + Math.random() * 1.4,      // fall speed
+    size:     big ? 22 + Math.random() * 18 : 16 + Math.random() * 14,
+    spin:     Math.random() > 0.5 ? 1 : -1,   // clockwise or counter
+    wobble:   (Math.random() - 0.5) * 60,     // horizontal drift px
+    opacity:  0.75 + Math.random() * 0.25,
   }));
 
   return (
-    <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 9999 }}>
-      {confetti.map(c => (
-        <div
-          key={c.id}
-          style={{
-            position: 'absolute',
-            left: `${c.left}%`,
-            top: '-20px',
-            width: c.size,
-            height: c.size,
-            backgroundColor: c.color,
-            borderRadius: Math.random() > 0.5 ? '50%' : '2px',
-            animation: `confetti ${c.duration}s ease-out forwards`,
-            animationDelay: `${c.delay}s`
-          }}
-        />
+    <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 9999, overflow: 'hidden' }}>
+      {coins.map(c => (
+        <div key={c.id} style={{
+          position: 'absolute',
+          left: `${c.left}%`,
+          top: '-60px',
+          fontSize: `${c.size}px`,
+          opacity: c.opacity,
+          animation: `coinFall ${c.duration}s cubic-bezier(0.25,0.1,0.25,1) forwards`,
+          animationDelay: `${c.delay}s`,
+          '--wobble': `${c.wobble}px`,
+          '--spin':   `${c.spin * 540}deg`,
+        }}>
+          🪙
+        </div>
       ))}
+      {/* Gold glow overlay for big wins */}
+      {big && (
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: 'radial-gradient(ellipse at 50% 40%, rgba(255,215,0,0.18) 0%, transparent 70%)',
+          animation: 'goldPulse 0.6s ease-in-out 3',
+        }} />
+      )}
       <style>{`
-        @keyframes confetti {
-          0% { transform: translateY(0) rotate(0deg); opacity: 1; }
-          100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+        @keyframes coinFall {
+          0%   { transform: translateY(0)      translateX(0)              rotateY(0deg)          scale(0.6); opacity: 0; }
+          8%   { opacity: 1; }
+          60%  { transform: translateY(55vh)   translateX(calc(var(--wobble) * 0.6))  rotateY(calc(var(--spin) * 0.6)) scale(1); }
+          100% { transform: translateY(110vh)  translateX(var(--wobble))   rotateY(var(--spin))   scale(0.8); opacity: 0; }
+        }
+        @keyframes goldPulse {
+          0%, 100% { opacity: 0; }
+          50%      { opacity: 1; }
         }
       `}</style>
     </div>
