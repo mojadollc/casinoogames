@@ -10,6 +10,7 @@ const KYC_STEPS = [
 export default function Wallet() {
   const [balance, setBalance] = useState({ balance: 0, bonus_balance: 0 });
   const [transactions, setTransactions] = useState([]);
+  const [txTab, setTxTab] = useState('all');
   const [tab, setTab] = useState('overview');
   const [page, setPage] = useState(1);
   const [totalTx, setTotalTx] = useState(0);
@@ -30,8 +31,10 @@ export default function Wallet() {
   const [message, setMessage] = useState('');
   const [walletLoading, setWalletLoading] = useState(true);
   const [txLoading, setTxLoading] = useState(true);
+  const [summary, setSummary] = useState({ winnings_today: 0, winnings_total: 0, bets_total: 0 });
 
   useEffect(() => {
+    walletAPI.summary().then(({ data }) => setSummary(data)).catch(() => {});
     walletAPI.balance().then(({ data }) => { setBalance(data); setWalletLoading(false); }).catch(() => setWalletLoading(false));
     authAPI.profile().then(({ data }) => {
       const c = data.kyc_bonus_claimed;
@@ -162,6 +165,20 @@ export default function Wallet() {
         </div>
       )}
 
+      {/* Wallet Summary */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '10px', marginBottom: '16px' }}>
+        {[
+          { label: "Today's Winnings", value: summary.winnings_today, color: '#00f5a0' },
+          { label: 'Total Winnings', value: summary.winnings_total, color: '#ffd700' },
+          { label: 'Total Bets', value: summary.bets_total, color: '#ff7043' },
+        ].map(({ label, value, color }) => (
+          <div key={label} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '12px', padding: '12px 8px', textAlign: 'center', border: `1px solid ${color}22` }}>
+            <p style={{ fontSize: '10px', color: 'var(--text-muted)', margin: '0 0 4px' }}>{label}</p>
+            <p style={{ fontSize: '14px', fontWeight: '700', color, margin: 0 }}>₱{Number(value).toLocaleString('en', { minimumFractionDigits: 2 })}</p>
+          </div>
+        ))}
+      </div>
+
       {/* Action Buttons */}
       <div className="action-buttons">
         <button className="btn btn-success" onClick={() => setShowDeposit(true)}>💳 Deposit</button>
@@ -172,44 +189,70 @@ export default function Wallet() {
 
       {/* Transactions */}
       <div className="card">
-        <h3 style={{ marginBottom: '12px', fontSize: '16px' }}>Recent Transactions</h3>
+        <h3 style={{ marginBottom: '12px', fontSize: '16px' }}>Transactions</h3>
+
+        {/* Category Tabs */}
+        <div style={{ display: 'flex', gap: '6px', marginBottom: '14px', overflowX: 'auto', paddingBottom: '2px' }}>
+          {[
+            { key: 'all',      label: 'All',       icon: '📋' },
+            { key: 'win',      label: 'Winnings',  icon: '🏆' },
+            { key: 'bet',      label: 'Bets',      icon: '🎰' },
+            { key: 'deposit',  label: 'Deposits',  icon: '💳' },
+            { key: 'withdraw', label: 'Withdrawals', icon: '🏦' },
+          ].map(({ key, label, icon }) => (
+            <button key={key} onClick={() => { setTxTab(key); setPage(1); }}
+              style={{
+                padding: '7px 12px', borderRadius: '20px', border: 'none', whiteSpace: 'nowrap',
+                fontSize: '12px', fontWeight: '700', cursor: 'pointer',
+                background: txTab === key ? 'var(--gold)' : 'rgba(255,255,255,0.06)',
+                color: txTab === key ? '#1a0a2e' : 'var(--text-muted)',
+                flexShrink: 0,
+              }}>{icon} {label}</button>
+          ))}
+        </div>
+
         {txLoading ? (
           Array.from({ length: 5 }).map((_, i) => <TransactionSkeleton key={i} />)
-        ) : transactions.length === 0 ? (
-          <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>No transactions yet</p>
-        ) : (
-          <>
-            {transactions.map((tx) => (
-              <div className="tx-item" key={tx.id}>
-                <div className="tx-info">
-                  <h4>{tx.type.replace('_', ' ').toUpperCase()}</h4>
-                  <p>{new Date(tx.created_at).toLocaleDateString()}</p>
+        ) : (() => {
+          const TX_ICONS = { win: '🏆', bet: '🎰', deposit: '💳', withdraw: '🏦', bonus: '🎁', refund: '↩️', free_spin: '🎡' };
+          const TX_COLORS = { win: '#00f5a0', bet: '#ff7043', deposit: '#4fc3f7', withdraw: '#ce93d8', bonus: '#ffd700', refund: '#80cbc4', free_spin: '#ffb74d' };
+          const filtered = txTab === 'all' ? transactions : transactions.filter(tx => tx.type?.startsWith(txTab));
+          return filtered.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>No {txTab === 'all' ? '' : txTab} transactions yet</p>
+          ) : (
+            <>
+              {filtered.map((tx) => {
+                const ttype = tx.type || 'bet';
+                const icon  = TX_ICONS[ttype] || TX_ICONS[ttype.split('_')[0]] || '💰';
+                const color = TX_COLORS[ttype] || TX_COLORS[ttype.split('_')[0]] || '#aaa';
+                return (
+                  <div className="tx-item" key={tx.id} style={{ borderLeft: `3px solid ${color}`, paddingLeft: '10px', marginBottom: '8px' }}>
+                    <div className="tx-info">
+                      <h4 style={{ color }}>{icon} {ttype.replace(/_/g, ' ').toUpperCase()}</h4>
+                      <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        {new Date(tx.created_at).toLocaleString('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                    <span className={`tx-amount ${tx.amount > 0 ? 'positive' : 'negative'}`}>
+                      {tx.amount > 0 ? '+' : ''}₱{Math.abs(tx.amount).toLocaleString()}
+                    </span>
+                  </div>
+                );
+              })}
+              {totalTx > LIMIT && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                  <button onClick={() => setPage(p => p - 1)} disabled={page === 1}
+                    style={{ padding: '8px 18px', borderRadius: '10px', border: '1px solid rgba(255,215,0,0.3)', background: page === 1 ? 'rgba(255,255,255,0.04)' : 'rgba(255,215,0,0.1)', color: page === 1 ? 'var(--text-muted)' : 'var(--gold)', cursor: page === 1 ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px' }}
+                  >← Prev</button>
+                  <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Page {page} of {Math.ceil(totalTx / LIMIT)}</span>
+                  <button onClick={() => setPage(p => p + 1)} disabled={page >= Math.ceil(totalTx / LIMIT)}
+                    style={{ padding: '8px 18px', borderRadius: '10px', border: '1px solid rgba(255,215,0,0.3)', background: page >= Math.ceil(totalTx / LIMIT) ? 'rgba(255,255,255,0.04)' : 'rgba(255,215,0,0.1)', color: page >= Math.ceil(totalTx / LIMIT) ? 'var(--text-muted)' : 'var(--gold)', cursor: page >= Math.ceil(totalTx / LIMIT) ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px' }}
+                  >Next →</button>
                 </div>
-                <span className={`tx-amount ${tx.amount > 0 ? 'positive' : 'negative'}`}>
-                  {tx.amount > 0 ? '+' : ''}₱{Math.abs(tx.amount).toLocaleString()}
-                </span>
-              </div>
-            ))}
-            {/* Pagination */}
-            {totalTx > LIMIT && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                <button
-                  onClick={() => setPage(p => p - 1)}
-                  disabled={page === 1}
-                  style={{ padding: '8px 18px', borderRadius: '10px', border: '1px solid rgba(255,215,0,0.3)', background: page === 1 ? 'rgba(255,255,255,0.04)' : 'rgba(255,215,0,0.1)', color: page === 1 ? 'var(--text-muted)' : 'var(--gold)', cursor: page === 1 ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px' }}
-                >← Prev</button>
-                <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                  Page {page} of {Math.ceil(totalTx / LIMIT)}
-                </span>
-                <button
-                  onClick={() => setPage(p => p + 1)}
-                  disabled={page >= Math.ceil(totalTx / LIMIT)}
-                  style={{ padding: '8px 18px', borderRadius: '10px', border: '1px solid rgba(255,215,0,0.3)', background: page >= Math.ceil(totalTx / LIMIT) ? 'rgba(255,255,255,0.04)' : 'rgba(255,215,0,0.1)', color: page >= Math.ceil(totalTx / LIMIT) ? 'var(--text-muted)' : 'var(--gold)', cursor: page >= Math.ceil(totalTx / LIMIT) ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px' }}
-                >Next →</button>
-              </div>
-            )}
-          </>
-        )}
+              )}
+            </>
+          );
+        })()}
       </div>
 
       {/* KYC Gate Modal */}
@@ -368,22 +411,32 @@ export default function Wallet() {
                 <label>Amount (₱)</label>
                 <input type="number" min="100" value={withdrawForm.amount} onChange={(e) => setWithdrawForm({ ...withdrawForm, amount: e.target.value })} placeholder="Enter amount" required style={{ fontSize: '20px', fontWeight: '700', textAlign: 'center' }} />
               </div>
+              {/* Payment Channel — GCash / Maya card selector */}
               <div className="input-group">
                 <label>Payment Channel</label>
-                <select value={withdrawForm.bank_code} onChange={(e) => setWithdrawForm({ ...withdrawForm, bank_code: e.target.value })} required>
-                  <option value="">Select channel</option>
-                  <optgroup label="E-Wallets">
-                    <option value="GCASH">GCash</option>
-                    <option value="MAYA">Maya</option>
-                  </optgroup>
-                  <optgroup label="Banks">
-                    <option value="BPI">BPI</option>
-                    <option value="BDO">BDO</option>
-                    <option value="UNIONBANK">UnionBank</option>
-                    <option value="METROBANK">Metrobank</option>
-                    <option value="PNB">PNB</option>
-                  </optgroup>
-                </select>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '6px' }}>
+                  {[
+                    { code: 'GCASH', label: 'GCash',  color: '#0070FF', bg: 'rgba(0,112,255,0.1)',  border: 'rgba(0,112,255,0.4)',  logo: '💙' },
+                    { code: 'MAYA',  label: 'Maya',   color: '#00C878', bg: 'rgba(0,200,120,0.1)', border: 'rgba(0,200,120,0.4)', logo: '💚' },
+                  ].map(({ code, label, color, bg, border, logo }) => (
+                    <button key={code} type="button"
+                      onClick={() => setWithdrawForm({ ...withdrawForm, bank_code: code })}
+                      style={{
+                        padding: '14px 10px', borderRadius: '12px', cursor: 'pointer',
+                        background: withdrawForm.bank_code === code ? bg : 'rgba(255,255,255,0.04)',
+                        border: `2px solid ${withdrawForm.bank_code === code ? color : 'rgba(255,255,255,0.1)'}`,
+                        color: withdrawForm.bank_code === code ? color : 'var(--text-muted)',
+                        fontWeight: '800', fontSize: '15px',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px',
+                        transition: 'all 0.2s',
+                        boxShadow: withdrawForm.bank_code === code ? `0 0 12px ${color}44` : 'none',
+                      }}>
+                      <span style={{ fontSize: '28px' }}>{logo}</span>
+                      <span>{label}</span>
+                      {withdrawForm.bank_code === code && <span style={{ fontSize: '10px', opacity: 0.8 }}>✓ Selected</span>}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="input-group">
                 <label>Account Number</label>

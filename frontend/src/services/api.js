@@ -75,6 +75,7 @@ export const authAPI = {
 export const walletAPI = {
   balance: () => api.get('/wallet/balance'),
   transactions: (params) => api.get('/wallet/transactions', { params }),
+  summary: () => api.get('/wallet/summary'),
 };
 
 export const paymentAPI = {
