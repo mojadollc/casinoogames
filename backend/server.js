@@ -127,6 +127,10 @@ const PORT = process.env.PORT || 3020;
 server.listen(PORT, async () => {
   try { await connectDB(); } catch (e) { console.error('DB connection failed:', e.message); }
   try { await connectRedis(); } catch (e) { console.log('Redis not available, continuing without cache'); }
+  // Ensure brute-force tracking columns exist (idempotent)
+  const { query: dbQuery } = require('./config/database');
+  try { await dbQuery('ALTER TABLE users ADD COLUMN failed_login_attempts INT NOT NULL DEFAULT 0'); } catch {}
+  try { await dbQuery('ALTER TABLE users ADD COLUMN locked_until DATETIME NULL'); } catch {}
   console.log(`Server running on port ${PORT}`);
 });
 

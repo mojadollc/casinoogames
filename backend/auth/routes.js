@@ -4,7 +4,8 @@ const jwt = require('jsonwebtoken');
 const speakeasy = require('speakeasy');
 const qrcode = require('qrcode');
 const { query } = require('../config/database');
-const { authenticate, authLimiter, refreshLimiter } = require('../middleware/auth');
+const { authenticate, authLimiter, registerLimiter, refreshLimiter } = require('../middleware/auth');
+const { realIp } = require('../middleware/auth');
 const { body, validationResult } = require('express-validator');
 const { v4: uuidv4 } = require('uuid');
 const { createAffiliation } = require('../affiliation/routes');
@@ -13,22 +14,45 @@ const { geocodeAddress, reverseGeocode, parseCoords, mapsLink } = require('../ut
 
 const router = express.Router();
 
+const DUMMY_HASH = '$2a$12$KIXBp/dummy.hash.to.prevent.timing.oracle.on.missing.user';
+
 const assertJwtConfig = () => {
-  if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
-    throw new Error('JWT secrets are not configured');
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+    throw new Error('JWT_SECRET must be at least 32 characters');
+  }
+  if (!process.env.JWT_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET.length < 32) {
+    throw new Error('JWT_REFRESH_SECRET must be at least 32 characters');
+  }
+  if (!process.env.JWT_EXPIRES_IN || !process.env.JWT_REFRESH_EXPIRES_IN) {
+    throw new Error('JWT expiry env vars are not configured');
   }
 };
 
+// Sanitize helpers
+const sanitizeUsername = (u) => u?.trim().replace(/[^a-zA-Z0-9_]/g, '').slice(0, 50);
+const isStrongPassword = (p) => p && p.length >= 8 && /[A-Z]/.test(p) && /[0-9]/.test(p);
+
 // Register
-router.post('/register', authLimiter, [
+router.post('/register', registerLimiter, [
   body('username').isLength({ min: 3, max: 50 }).trim(),
   body('email').isEmail().normalizeEmail(),
   body('password').isLength({ min: 8 }),
 ], async (req, res) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  if (!errors.isEmpty()) return res.status(400).json({ error: 'Invalid input. Check username (3-50 chars), email, and password (min 8 chars).' });
 
-  const { username, email, password, phone, ref } = req.body;
+  const rawUsername = req.body.username;
+  const username = sanitizeUsername(rawUsername);
+  if (!username || username.length < 3) {
+    return res.status(400).json({ error: 'Username must be 3-50 characters and contain only letters, numbers, or underscores.' });
+  }
+
+  const { email, password, phone, ref } = req.body;
+
+  if (!isStrongPassword(password)) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters and include one uppercase letter and one number.' });
+  }
+
   try {
     assertJwtConfig();
     const existing = await query('SELECT id FROM users WHERE email = ? OR username = ?', [email, username]);
@@ -36,37 +60,27 @@ router.post('/register', authLimiter, [
 
     const id = uuidv4();
     const password_hash = await bcrypt.hash(password, 12);
-    // Generate unique referral code at registration
     let referral_code;
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     do {
       referral_code = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-      const existing = await query('SELECT id FROM users WHERE referral_code = ?', [referral_code]);
-      if (!existing.rows.length) break;
+      const dup = await query('SELECT id FROM users WHERE referral_code = ?', [referral_code]);
+      if (!dup.rows.length) break;
     } while (true);
 
     await query(
       'INSERT INTO users (id, username, email, password_hash, phone, referral_code) VALUES (?, ?, ?, ?, ?, ?)',
-      [id, username, email, password_hash, phone || null, referral_code]
+      [id, username, email, password_hash, phone ? String(phone).slice(0, 20) : null, referral_code]
     );
-
-    const walletId = uuidv4();
-    await query('INSERT INTO wallets (id, user_id) VALUES (?, ?)', [walletId, id]);
-
-    // Handle referral
-    if (ref) {
-      await createAffiliation(id, ref);
-    }
+    await query('INSERT INTO wallets (id, user_id) VALUES (UUID(), ?)', [id]);
+    if (ref) await createAffiliation(id, ref).catch(() => {});
 
     const token = jwt.sign({ userId: id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN });
     const refreshToken = jwt.sign({ userId: id }, process.env.JWT_REFRESH_SECRET, { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN });
-
-    const sessionId = uuidv4();
     await query(
       'INSERT INTO sessions (id, user_id, token, ip_address, user_agent, expires_at) VALUES (?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY))',
-      [sessionId, id, refreshToken, req.ip, req.headers['user-agent']]
+      [uuidv4(), id, refreshToken, realIp(req), String(req.headers['user-agent'] || '').slice(0, 255)]
     );
-
     res.status(201).json({ user: { id, username, email, referral_code }, token, refreshToken });
   } catch (err) {
     console.error('Register error:', err.message);
@@ -76,8 +90,8 @@ router.post('/register', authLimiter, [
 
 // Login
 router.post('/login', authLimiter, [
-  body('email').isEmail(),
-  body('password').notEmpty()
+  body('email').isEmail().normalizeEmail(),
+  body('password').notEmpty().isLength({ max: 128 }),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ error: 'Invalid email or password format' });
@@ -85,33 +99,64 @@ router.post('/login', authLimiter, [
   const { email, password, otp } = req.body;
   try {
     assertJwtConfig();
-    const result = await query('SELECT * FROM users WHERE email = ?', [email]);
+    const result = await query(
+      'SELECT id, username, email, password_hash, status, two_factor_enabled, two_factor_secret, vip_level, role_id, failed_login_attempts, locked_until FROM users WHERE email = ?',
+      [email]
+    );
     const user = result.rows[0];
 
-    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+    // Always run bcrypt to prevent timing oracle — use dummy hash if user not found
+    const hashToCheck = user?.password_hash || DUMMY_HASH;
+    const match = await bcrypt.compare(password, hashToCheck);
 
-    const match = await bcrypt.compare(password, user.password_hash);
-    if (!match) return res.status(401).json({ error: 'Invalid credentials' });
+    if (!user || !match) {
+      // Increment failed attempts if user exists
+      if (user) {
+        const attempts = (user.failed_login_attempts || 0) + 1;
+        const lockUntil = attempts >= 5
+          ? new Date(Date.now() + 15 * 60 * 1000)  // lock 15 min after 5 failures
+          : null;
+        await query(
+          'UPDATE users SET failed_login_attempts = ?, locked_until = ? WHERE id = ?',
+          [attempts, lockUntil, user.id]
+        ).catch(() => {});
+      }
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Check account lock
+    if (user.locked_until && new Date(user.locked_until) > new Date()) {
+      const mins = Math.ceil((new Date(user.locked_until) - Date.now()) / 60000);
+      return res.status(423).json({ error: `Account temporarily locked. Try again in ${mins} minute(s).` });
+    }
 
     if (user.status !== 'active') return res.status(403).json({ error: 'Account suspended' });
 
     if (user.two_factor_enabled) {
       if (!otp) return res.status(200).json({ requires2FA: true });
-      const verified = speakeasy.totp.verify({ secret: user.two_factor_secret, encoding: 'base32', token: otp });
+      const verified = speakeasy.totp.verify({
+        secret: user.two_factor_secret,
+        encoding: 'base32',
+        token: String(otp).replace(/\s/g, ''),
+        window: 1,
+      });
       if (!verified) return res.status(401).json({ error: 'Invalid OTP' });
     }
 
+    // Reset failed attempts on success
+    await query(
+      'UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?',
+      [user.id]
+    ).catch(() => {});
+
     const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN });
     const refreshToken = jwt.sign({ userId: user.id }, process.env.JWT_REFRESH_SECRET, { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN });
-
-    const sessionId = uuidv4();
     await query(
       'INSERT INTO sessions (id, user_id, token, ip_address, user_agent, expires_at) VALUES (?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY))',
-      [sessionId, user.id, refreshToken, req.ip, req.headers['user-agent']]
+      [uuidv4(), user.id, refreshToken, realIp(req), String(req.headers['user-agent'] || '').slice(0, 255)]
     );
-
-    await query('INSERT INTO audit_logs (id, user_id, action, ip_address) VALUES (?, ?, ?, ?)',
-      [uuidv4(), user.id, 'login', req.ip]);
+    await query('INSERT INTO audit_logs (id, user_id, action, ip_address) VALUES (UUID(),?,?,?)',
+      [user.id, 'login', realIp(req)]);
 
     res.json({ user: { id: user.id, username: user.username, email: user.email, vip_level: user.vip_level, role_id: user.role_id }, token, refreshToken });
   } catch (err) {

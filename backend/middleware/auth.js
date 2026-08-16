@@ -105,18 +105,34 @@ const gameLimiter = rateLimiter({
     }),
 });
 
-/** Login / register — stricter, by IP */
+/** Login — tight per-IP brute-force guard: 10 attempts / 15 min */
 const authLimiter = rateLimiter({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: realIp,
+  skipSuccessfulRequests: true,   // only count failures toward the limit
+  handler: (req, res) =>
+    res.status(429).json({
+      error: 'Too many login attempts. Please wait 15 minutes.',
+      code: 'AUTH_RATE_LIMIT',
+      retryAfter: 900,
+    }),
+});
+
+/** Register — separate limiter: 5 registrations / hour per IP */
+const registerLimiter = rateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: realIp,
   handler: (req, res) =>
     res.status(429).json({
-      error: 'Too many attempts, please wait a few minutes.',
-      code: 'AUTH_RATE_LIMIT',
-      retryAfter: 60,
+      error: 'Too many accounts created from this IP. Try again later.',
+      code: 'REGISTER_RATE_LIMIT',
+      retryAfter: 3600,
     }),
 });
 
@@ -142,5 +158,7 @@ module.exports = {
   apiLimiter,
   gameLimiter,
   authLimiter,
+  registerLimiter,
   refreshLimiter,
+  realIp,
 };

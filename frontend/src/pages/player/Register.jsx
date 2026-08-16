@@ -14,6 +14,14 @@ export default function Register() {
   const [form, setForm] = useState({ username: '', email: '', password: '', phone: '', ref: refCode || '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [pwStrength, setPwStrength] = useState({ ok: false, msg: '' });
+
+  const checkPassword = (pw) => {
+    if (pw.length < 8) return { ok: false, msg: 'At least 8 characters' };
+    if (!/[A-Z]/.test(pw)) return { ok: false, msg: 'Add at least one uppercase letter' };
+    if (!/[0-9]/.test(pw)) return { ok: false, msg: 'Add at least one number' };
+    return { ok: true, msg: '✅ Strong password' };
+  };
 
   // KYC step state
   const [kycMode, setKycMode] = useState(false);
@@ -44,12 +52,22 @@ export default function Register() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    // Sanitize username client-side
+    const cleanUsername = form.username.trim().replace(/[^a-zA-Z0-9_]/g, '');
+    if (cleanUsername.length < 3) {
+      setError('Username must be 3-50 characters (letters, numbers, underscores only).');
+      return;
+    }
+    if (!pwStrength.ok) {
+      setError(pwStrength.msg || 'Password is too weak.');
+      return;
+    }
     setLoading(true);
     try {
-      await register(form);
+      await register({ ...form, username: cleanUsername });
       setKycMode(true);
     } catch (err) {
-      setError(err.response?.data?.error || err.response?.data?.errors?.[0]?.msg || 'Registration failed');
+      setError(err.response?.data?.error || 'Registration failed');
     }
     setLoading(false);
   };
@@ -226,7 +244,16 @@ export default function Register() {
           </div>
           <div className="input-group">
             <label>Password</label>
-            <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required placeholder="Min 8 characters" minLength={8} />
+            <input type="password" value={form.password} onChange={(e) => {
+              const pw = e.target.value;
+              setForm({ ...form, password: pw });
+              setPwStrength(checkPassword(pw));
+            }} required placeholder="Min 8 chars, 1 uppercase, 1 number" minLength={8} />
+            {form.password && (
+              <p style={{ fontSize: '12px', marginTop: '4px', color: pwStrength.ok ? 'var(--success)' : 'var(--danger)' }}>
+                {pwStrength.msg}
+              </p>
+            )}
           </div>
           <button type="submit" className="btn btn-primary" disabled={loading}>
             {loading ? 'Creating...' : 'Create Account'}
