@@ -274,21 +274,10 @@ export default function SlotGame() {
     }
   }, [autoSpin, spinning, balance, bet]);
 
-  // Imperative spin: start all reels, then schedule sequential stops
-  const spinReels = useCallback((finalReels) => {
+  // Stop reels sequentially — called after API returns
+  const stopReels = useCallback((finalReels) => {
     return new Promise((resolve) => {
-      setWinningLines([]);
-      setLastWin(0);
-      setMessage('');
-      setBigWinAmount(0);
-      setSpinning(true);
-      sounds.play('whoosh');
-
-      // Start all 5 reels immediately
-      reelRefs.current.forEach(r => r?.startSpin());
-
       let stopped = 0;
-      // Schedule each reel to stop with its delay
       reelRefs.current.forEach((r, i) => {
         setTimeout(() => {
           r?.stopSpin(finalReels[i], () => {
@@ -320,10 +309,19 @@ export default function SlotGame() {
   const spin = async () => {
     if (spinning || balance < bet || !game) return;
 
+    // START SPINNING IMMEDIATELY — visible before API responds
+    setSpinning(true);
+    setWinningLines([]);
+    setLastWin(0);
+    setMessage('');
+    setBigWinAmount(0);
+    sounds.play('whoosh');
+    reelRefs.current.forEach(r => r?.startSpin());
+
     try {
       const { data } = await gameAPI.spin(game.id, bet);
       const finalGrid = normalizeGrid(data.grid);
-      await spinReels(finalGrid);
+      await stopReels(finalGrid);
 
       setBalance(data.balance ?? data.newBalance ?? balance);
       setLastWin(data.totalWin || 0);
@@ -374,8 +372,8 @@ export default function SlotGame() {
         setMessage(prev => (prev || '') + ` 🎁 +${data.freeSpinsAwarded} Free Spins!`);
       }
     } catch (err) {
+      await stopReels(generateRandomReels());
       setMessage(err.response?.data?.error || 'Spin failed');
-      setSpinning(false);
     }
   };
 
@@ -391,14 +389,19 @@ export default function SlotGame() {
     if (spinning || freeSpins <= 0) return;
     
     setFreeSpins(prev => prev - 1);
+    setSpinning(true);
+    setWinningLines([]);
+    setLastWin(0);
+    setMessage('');
+    sounds.play('whoosh');
+    reelRefs.current.forEach(r => r?.startSpin());
     try {
       const { data } = await gameAPI.freeSpin(game.id);
       const finalGrid = normalizeGrid(data.grid);
-      await spinReels(finalGrid);
+      await stopReels(finalGrid);
       setBalance(data.balance ?? data.newBalance ?? balance);
       setLastWin(data.totalWin || 0);
       setFreeSpins(data.freeSpinsRemaining ?? Math.max(0, freeSpins - 1));
-
       if (data.totalWin > 0) {
         sounds.play('win');
         triggerCoinBurst(window.innerWidth / 2, window.innerHeight * 0.65);
@@ -408,8 +411,8 @@ export default function SlotGame() {
         setFreeSpins(prev => prev + data.freeSpinsAwarded);
       }
     } catch (err) {
+      await stopReels(generateRandomReels());
       setMessage(err.response?.data?.error || 'Free spin failed');
-      setSpinning(false);
     }
   };
 
