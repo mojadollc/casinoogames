@@ -241,79 +241,164 @@ const getThemedSymbol = (slug, symbolId) => {
   return DEFAULT_SYMBOLS[symbolId] || { icon: '❓', name: symbolId, value: 5 };
 };
 
-// Audio context for sound effects
-const createAudioContext = () => {
-  const AudioContext = window.AudioContext || window.webkitAudioContext;
-  return new AudioContext();
-};
-
+// ── Audio Engine ────────────────────────────────────────────────────────────
 let audioContext = null;
+let spinLoopNodes = null; // holds the continuous spin loop so we can stop it
 
-const playSpinSound = () => {
-  if (!audioContext) audioContext = createAudioContext();
-  const oscillator = audioContext.createOscillator();
-  const gainNode = audioContext.createGain();
-  oscillator.connect(gainNode);
-  gainNode.connect(audioContext.destination);
-  oscillator.type = 'sine';
-  oscillator.frequency.setValueAtTime(200, audioContext.currentTime);
-  oscillator.frequency.exponentialRampToValueAtTime(800, audioContext.currentTime + 0.1);
-  oscillator.frequency.exponentialRampToValueAtTime(200, audioContext.currentTime + 0.2);
-  gainNode.gain.setValueAtTime(0.15, audioContext.currentTime);
-  gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
-  oscillator.start(audioContext.currentTime);
-  oscillator.stop(audioContext.currentTime + 0.2);
+function getAC() {
+  if (!audioContext) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    audioContext = new AC();
+  }
+  // Resume if suspended (browser autoplay policy)
+  if (audioContext.state === 'suspended') audioContext.resume();
+  return audioContext;
+}
+
+// Mechanical whirring loop — runs for the entire spin duration
+const startSpinSound = () => {
+  const ac = getAC();
+  const master = ac.createGain();
+  master.gain.setValueAtTime(0, ac.currentTime);
+  master.gain.linearRampToValueAtTime(0.18, ac.currentTime + 0.25); // fade in
+  master.connect(ac.destination);
+
+  // Layer 1: low mechanical hum (sawtooth)
+  const hum = ac.createOscillator();
+  const humGain = ac.createGain();
+  hum.type = 'sawtooth';
+  hum.frequency.setValueAtTime(55, ac.currentTime);
+  humGain.gain.value = 0.4;
+  hum.connect(humGain);
+  humGain.connect(master);
+  hum.start();
+
+  // Layer 2: mid clicking rattle (filtered noise via fast oscillator)
+  const rattle = ac.createOscillator();
+  const rattleGain = ac.createGain();
+  rattle.type = 'square';
+  rattle.frequency.setValueAtTime(180, ac.currentTime);
+  rattleGain.gain.value = 0.25;
+  rattle.connect(rattleGain);
+  rattleGain.connect(master);
+  rattle.start();
+
+  // Layer 3: high-freq ticker (simulates symbol click-past)
+  const ticker = ac.createOscillator();
+  const tickerGain = ac.createGain();
+  ticker.type = 'square';
+  ticker.frequency.setValueAtTime(420, ac.currentTime);
+  // Modulate ticker frequency to create rhythmic clicking
+  const lfo = ac.createOscillator();
+  const lfoGain = ac.createGain();
+  lfo.frequency.value = 14; // ~14 clicks/sec matches visible symbol scroll
+  lfoGain.gain.value = 180;
+  lfo.connect(lfoGain);
+  lfoGain.connect(ticker.frequency);
+  lfo.start();
+  tickerGain.gain.value = 0.15;
+  ticker.connect(tickerGain);
+  tickerGain.connect(master);
+  ticker.start();
+
+  spinLoopNodes = { master, hum, rattle, ticker, lfo };
 };
 
+const stopSpinSound = () => {
+  if (!spinLoopNodes || !audioContext) return;
+  const ac = audioContext;
+  const { master, hum, rattle, ticker, lfo } = spinLoopNodes;
+  master.gain.setValueAtTime(master.gain.value, ac.currentTime);
+  master.gain.linearRampToValueAtTime(0, ac.currentTime + 0.12); // quick fade out
+  setTimeout(() => {
+    try { hum.stop(); rattle.stop(); ticker.stop(); lfo.stop(); } catch(e) {}
+    spinLoopNodes = null;
+  }, 150);
+};
+
+// Sharp mechanical CLACK when a reel locks in
 const playReelStopSound = () => {
-  if (!audioContext) audioContext = createAudioContext();
-  const oscillator = audioContext.createOscillator();
-  const gainNode = audioContext.createGain();
-  oscillator.connect(gainNode);
-  gainNode.connect(audioContext.destination);
-  oscillator.type = 'triangle';
-  oscillator.frequency.setValueAtTime(550, audioContext.currentTime);
-  oscillator.frequency.exponentialRampToValueAtTime(220, audioContext.currentTime + 0.1);
-  gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
-  gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-  oscillator.start(audioContext.currentTime);
-  oscillator.stop(audioContext.currentTime + 0.1);
+  const ac = getAC();
+  const t = ac.currentTime;
+
+  // Thud: low-freq punch
+  const thud = ac.createOscillator();
+  const thudGain = ac.createGain();
+  thud.type = 'sine';
+  thud.frequency.setValueAtTime(160, t);
+  thud.frequency.exponentialRampToValueAtTime(60, t + 0.06);
+  thudGain.gain.setValueAtTime(0.5, t);
+  thudGain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+  thud.connect(thudGain);
+  thudGain.connect(ac.destination);
+  thud.start(t); thud.stop(t + 0.12);
+
+  // Click: high transient snap
+  const click = ac.createOscillator();
+  const clickGain = ac.createGain();
+  click.type = 'square';
+  click.frequency.setValueAtTime(900, t);
+  click.frequency.exponentialRampToValueAtTime(200, t + 0.04);
+  clickGain.gain.setValueAtTime(0.3, t);
+  clickGain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+  click.connect(clickGain);
+  clickGain.connect(ac.destination);
+  click.start(t); click.stop(t + 0.05);
 };
 
+// Coin jingle win — ascending chime + coin clink layer
 const playWinSound = () => {
-  if (!audioContext) audioContext = createAudioContext();
-  const notes = [523.25, 659.25, 783.99, 1046.50];
-  notes.forEach((freq, i) => {
-    setTimeout(() => {
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(freq, audioContext.currentTime);
-      gainNode.gain.setValueAtTime(0.25, audioContext.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
-      oscillator.start(audioContext.currentTime);
-      oscillator.stop(audioContext.currentTime + 0.3);
-    }, i * 100);
+  const ac = getAC();
+  // Ascending chime: C5 E5 G5 C6
+  [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
+    const t = ac.currentTime + i * 0.11;
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, t);
+    gain.gain.setValueAtTime(0.28, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.start(t); osc.stop(t + 0.35);
+
+    // Coin clink on each note
+    const clink = ac.createOscillator();
+    const clinkGain = ac.createGain();
+    clink.type = 'triangle';
+    clink.frequency.setValueAtTime(freq * 2.5, t);
+    clinkGain.gain.setValueAtTime(0.12, t);
+    clinkGain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    clink.connect(clinkGain); clinkGain.connect(ac.destination);
+    clink.start(t); clink.stop(t + 0.15);
   });
 };
 
+// Big win fanfare — full ascending arpeggio + shimmer
 const playJackpotSound = () => {
-  if (!audioContext) audioContext = createAudioContext();
-  for (let i = 0; i < 8; i++) {
-    setTimeout(() => {
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-      oscillator.type = 'square';
-      oscillator.frequency.setValueAtTime(400 + (i * 100), audioContext.currentTime);
-      gainNode.gain.setValueAtTime(0.15, audioContext.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15);
-      oscillator.start(audioContext.currentTime);
-      oscillator.stop(audioContext.currentTime + 0.15);
-    }, i * 80);
+  const ac = getAC();
+  const fanfare = [261.63, 329.63, 392, 523.25, 659.25, 783.99, 1046.50, 1318.51];
+  fanfare.forEach((freq, i) => {
+    const t = ac.currentTime + i * 0.09;
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.type = i < 4 ? 'triangle' : 'sine';
+    osc.frequency.setValueAtTime(freq, t);
+    gain.gain.setValueAtTime(0.22, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.start(t); osc.stop(t + 0.4);
+  });
+  // Shimmer layer on top
+  for (let i = 0; i < 6; i++) {
+    const t = ac.currentTime + 0.5 + i * 0.07;
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 1200 + i * 180;
+    gain.gain.setValueAtTime(0.1, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.start(t); osc.stop(t + 0.2);
   }
 };
 
@@ -378,7 +463,7 @@ export default function GamePlay() {
     // Final symbols known before animation so each reel lands correctly
     setGrid(finalGrid);
     setDisplayGrid(finalGrid);
-    playSpinSound();
+    startSpinSound();
     setSpinProgress({ 0: true, 1: true, 2: true, 3: true, 4: true });
 
     const BASE = 400;       // first reel keeps spinning this long
@@ -426,11 +511,12 @@ export default function GamePlay() {
     setBigWin(false);
     // Start all reels spinning immediately
     setSpinProgress({ 0: true, 1: true, 2: true, 3: true, 4: true });
-    playSpinSound();
+    startSpinSound();
 
     try {
       const { data } = await gameAPI.spin(game.id, bet);
       // Stop reels sequentially with staggered delays
+      stopSpinSound(); // fade out whirr before first clack
       for (let i = 0; i < 5; i++) {
         await new Promise(r => setTimeout(r, i === 0 ? STOP_DELAYS[0] : STOP_DELAYS[i] - STOP_DELAYS[i-1]));
         playReelStopSound();
