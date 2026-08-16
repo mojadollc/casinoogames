@@ -145,7 +145,6 @@ export default function CardGame() {
   const [tables, setTables] = useState([]);
   const [table, setTable] = useState(null);
   const [bet, setBet] = useState(10);
-  const [chipStack, setChipStack] = useState(10);
   const [side, setSide] = useState('player');
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
@@ -156,7 +155,6 @@ export default function CardGame() {
     gameAPI.details(slug).then(({ data }) => {
       setGame(data);
       setBet(Number(data.min_bet) || 10);
-      setChipStack(Number(data.min_bet) || 10);
     }).catch(() => navigate('/'));
   }, [slug, navigate]);
 
@@ -553,12 +551,12 @@ export default function CardGame() {
             {/* Chip Selector */}
             <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
               {CHIP_VALUES.map(val => (
-                <button key={val} type="button" onClick={() => setChipStack(val)}
+                <button key={val} type="button" onClick={() => setBet(val)}
                   style={{
-                    padding: '6px 10px', borderRadius: 6, border: chipStack === val ? '2px solid #FFD700' : '1px solid #2a5',
-                    background: chipStack === val ? 'rgba(255,215,0,0.2)' : 'rgba(0,40,20,0.4)',
-                    color: chipStack === val ? '#FFD700' : '#8c8', fontWeight: 700, fontSize: 11,
-                    animation: chipStack === val ? 'chipPulse 0.3s ease-out' : 'none',
+                    padding: '6px 10px', borderRadius: 6, border: bet === val ? '2px solid #FFD700' : '1px solid #2a5',
+                    background: bet === val ? 'rgba(255,215,0,0.2)' : 'rgba(0,40,20,0.4)',
+                    color: bet === val ? '#FFD700' : '#8c8', fontWeight: 700, fontSize: 11,
+                    animation: bet === val ? 'chipPulse 0.3s ease-out' : 'none',
                   }}>
                   ₱{val}
                 </button>
