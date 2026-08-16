@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef } from 'react';
 import { gsap } from 'gsap';
 
 export const SYMBOL_IDS = ['wild','scatter','seven','bar','bell','cherry','lemon','orange','plum','grape'];
@@ -10,171 +10,140 @@ const SYMBOL_EMOJI = {
   wild:'⭐', scatter:'💎', seven:'7️⃣', bar:'🎰', bell:'🔔',
   cherry:'🍒', lemon:'🍋', orange:'🍊', plum:'🟣', grape:'🍇',
 };
-
 function rand() { return SYMBOL_IDS[Math.floor(Math.random() * SYMBOL_IDS.length)]; }
 
-// Inject global keyframes once
-const STYLE_ID = 'reel-spin-style';
-if (!document.getElementById(STYLE_ID)) {
-  const s = document.createElement('style');
-  s.id = STYLE_ID;
-  s.textContent = `
-    @keyframes reelSpin {
-      0%   { transform: translateY(0px); }
-      100% { transform: translateY(-50%); }
-    }
-    .reel-spinning {
-      animation: reelSpin 0.4s linear infinite;
-      filter: blur(2px);
-    }
-    .reel-stopping {
-      filter: blur(1px);
-      transition: filter 0.2s;
-    }
-    .reel-stopped {
-      filter: blur(0px);
-      transition: filter 0.15s;
-    }
-    @keyframes symbolWin {
-      0%,100% { transform: scale(1); }
-      50%      { transform: scale(1.18); }
-    }
-    .symbol-winning {
-      animation: symbolWin 0.5s ease-in-out infinite;
-    }
-  `;
-  document.head.appendChild(s);
-}
-
-// ── AnimatedReel ──────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// AnimatedReel
+// Parent calls: ref.current.startSpin()  — starts CSS scroll animation
+//               ref.current.stopSpin(finals, cb) — stops and shows finals
+// ─────────────────────────────────────────────────────────────────────────────
 export const AnimatedReel = forwardRef(function AnimatedReel(
   { initialSymbols, cellSize = 58, gap = 6, winningRows = [], accent = '#FFD700' },
   ref
 ) {
-  const CELL = cellSize + gap;
-  const VISIBLE_H = cellSize * 3 + gap * 2;
+  const CELL   = cellSize + gap;          // height of one cell + gap
+  const ROWS   = 3;                       // visible rows
+  const EXTRA  = 12;                      // random symbols above final rows
+  const TOTAL  = EXTRA + ROWS;            // total cells in strip
+  const STRIP_H = TOTAL * CELL;           // total strip pixel height
+  const VIEW_H  = ROWS * CELL - gap;      // visible window height
 
-  // State: 'idle' | 'spinning' | 'stopping'
-  const [phase, setPhase] = useState('idle');
-  const [displaySyms, setDisplaySyms] = useState(
-    () => (initialSymbols && initialSymbols.length >= 3 ? initialSymbols.slice(0,3) : [rand(),rand(),rand()])
+  // 'idle' | 'spinning' | 'stopping'
+  const [phase, setPhase]       = useState('idle');
+  const [symbols, setSymbols]   = useState(
+    () => initialSymbols?.slice(0, 3) ?? [rand(), rand(), rand()]
   );
-  // The spinning strip is 2× height so the CSS loop works: top half = random, bottom half = same random (seamless)
-  const [spinSyms, setSpinSyms] = useState(() => Array.from({length: 12}, rand));
+  const [spinStrip, setSpinStrip] = useState(() => Array.from({ length: TOTAL }, rand));
 
-  const onStopCbRef = useRef(null);
-  const finalSymsRef = useRef(null);
-  const stopTimerRef = useRef(null);
-  const stripRef = useRef(null);
-  const containerRef = useRef(null);
+  const containerRef  = useRef(null);
+  const stripRef      = useRef(null);
+  const finalRef      = useRef(null);
+  const cbRef         = useRef(null);
+  const timerRef      = useRef(null);
 
+  // ── Imperative API ──────────────────────────────────────────────────────────
   useImperativeHandle(ref, () => ({
     startSpin() {
-      // Build a fresh random strip (12 symbols, looped seamlessly)
-      const fresh = Array.from({length: 12}, rand);
-      setSpinSyms(fresh);
+      clearTimeout(timerRef.current);
+      setSpinStrip(Array.from({ length: TOTAL }, rand));
       setPhase('spinning');
-      if (containerRef.current) {
-        containerRef.current.style.borderColor = accent;
-        containerRef.current.style.boxShadow = `inset 0 0 20px ${accent}44, 0 0 14px ${accent}33`;
-      }
     },
     stopSpin(finals, onStop) {
-      finalSymsRef.current = finals && finals.length >= 3 ? finals : [rand(),rand(),rand()];
-      onStopCbRef.current = onStop;
+      finalRef.current  = finals?.length >= 3 ? finals.slice(0, 3) : [rand(), rand(), rand()];
+      cbRef.current     = onStop;
       setPhase('stopping');
     },
   }));
 
-  // When phase becomes 'stopping': wait a short moment then snap to final
+  // ── When stopping: brief pause then snap to finals with bounce ──────────────
   useEffect(() => {
     if (phase !== 'stopping') return;
-    // Let the blur transition play (200ms) then show final symbols
-    stopTimerRef.current = setTimeout(() => {
-      const finals = finalSymsRef.current || [rand(),rand(),rand()];
-      setDisplaySyms(finals);
+    timerRef.current = setTimeout(() => {
+      setSymbols(finalRef.current ?? [rand(), rand(), rand()]);
       setPhase('idle');
-      if (containerRef.current) {
-        containerRef.current.style.borderColor = 'rgba(255,215,0,0.25)';
-        containerRef.current.style.boxShadow = 'inset 0 0 12px rgba(0,0,0,0.6)';
-      }
-      // Bounce the strip
+      // Bounce
       if (stripRef.current) {
-        gsap.fromTo(stripRef.current,
-          { y: -8 },
-          { y: 0, duration: 0.35, ease: 'back.out(3)' }
-        );
+        gsap.fromTo(stripRef.current, { y: -6 }, { y: 0, duration: 0.3, ease: 'back.out(3)' });
       }
-      onStopCbRef.current?.();
-      onStopCbRef.current = null;
-    }, 220);
-    return () => clearTimeout(stopTimerRef.current);
+      cbRef.current?.();
+      cbRef.current = null;
+    }, 180);
+    return () => clearTimeout(timerRef.current);
   }, [phase]);
 
-  // Update display when initialSymbols changes and we're idle
+  // ── Sync idle display when initialSymbols prop changes ─────────────────────
   useEffect(() => {
-    if (phase === 'idle' && initialSymbols && initialSymbols.length >= 3) {
-      setDisplaySyms(initialSymbols.slice(0,3));
+    if (phase === 'idle' && initialSymbols?.length >= 3) {
+      setSymbols(initialSymbols.slice(0, 3));
     }
-  }, [initialSymbols, phase]);
+  }, [initialSymbols]); // eslint-disable-line
 
-  useEffect(() => () => clearTimeout(stopTimerRef.current), []);
+  const spinning  = phase === 'spinning';
+  const stopping  = phase === 'stopping';
+  const moving    = spinning || stopping;
 
-  const isSpinning = phase === 'spinning';
-  const isStopping = phase === 'stopping';
-  const isMoving = isSpinning || isStopping;
-
-  // The spinning strip: 24 cells (12 repeated twice for seamless loop)
-  const loopSyms = [...spinSyms, ...spinSyms];
-  const stripH = loopSyms.length * CELL;
+  // The spin strip scrolls from y=0 to y=-(STRIP_H - VIEW_H) then loops.
+  // We achieve the loop by duplicating the strip and animating -50% of total.
+  // Total duplicated height = STRIP_H * 2, so -50% = -STRIP_H exactly.
+  const dupStrip  = [...spinStrip, ...spinStrip];
+  const dupH      = STRIP_H * 2;
+  const animDur   = `${(STRIP_H / 900).toFixed(2)}s`; // ~speed: 900px/s
 
   return (
     <div
       ref={containerRef}
       style={{
         width: cellSize + 12,
-        height: VISIBLE_H,
+        height: VIEW_H,
         overflow: 'hidden',
         borderRadius: 12,
         position: 'relative',
-        background: 'linear-gradient(180deg,rgba(0,0,0,0.85) 0%,rgba(10,10,30,0.7) 50%,rgba(0,0,0,0.85) 100%)',
-        border: `2px solid rgba(255,215,0,0.25)`,
-        boxShadow: 'inset 0 0 12px rgba(0,0,0,0.6)',
         flexShrink: 0,
+        background: 'linear-gradient(180deg,rgba(0,0,0,0.85),rgba(10,10,30,0.7) 50%,rgba(0,0,0,0.85))',
+        border: `2px solid ${moving ? accent : 'rgba(255,215,0,0.25)'}`,
+        boxShadow: moving
+          ? `inset 0 0 20px ${accent}55, 0 0 12px ${accent}44`
+          : 'inset 0 0 12px rgba(0,0,0,0.6)',
+        transition: 'border-color 0.15s, box-shadow 0.15s',
       }}
     >
-      {/* Top/bottom fade overlays */}
-      <div style={{ position:'absolute', top:0, left:0, right:0, height:22, zIndex:3, background:'linear-gradient(180deg,rgba(0,0,0,0.95),transparent)', pointerEvents:'none' }} />
-      <div style={{ position:'absolute', bottom:0, left:0, right:0, height:22, zIndex:3, background:'linear-gradient(0deg,rgba(0,0,0,0.95),transparent)', pointerEvents:'none' }} />
+      {/* Fade top */}
+      <div style={{ position:'absolute',top:0,left:0,right:0,height:18,zIndex:3,
+        background:'linear-gradient(180deg,rgba(0,0,0,0.9),transparent)',pointerEvents:'none' }} />
+      {/* Fade bottom */}
+      <div style={{ position:'absolute',bottom:0,left:0,right:0,height:18,zIndex:3,
+        background:'linear-gradient(0deg,rgba(0,0,0,0.9),transparent)',pointerEvents:'none' }} />
 
-      {/* SPINNING view — CSS animation, always visible while spinning */}
-      {isMoving && (
-        <div
-          className={isSpinning ? 'reel-spinning' : 'reel-stopping'}
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap,
-            paddingTop: gap,
-            height: stripH,
-            // animation-duration scales with strip height for consistent speed
-            animationDuration: isSpinning ? `${(loopSyms.length * CELL / 1200).toFixed(2)}s` : undefined,
-          }}
-        >
-          {loopSyms.map((id, i) => (
-            <Cell key={i} id={id} size={cellSize} />
-          ))}
+      {/* ── SPINNING strip ── */}
+      {moving && (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap,
+          paddingTop: gap / 2,
+          height: dupH,
+          // CSS keyframe: scroll from 0 to -STRIP_H (= -50% of dupH) infinitely
+          animation: spinning ? `reelScroll ${animDur} linear infinite` : 'none',
+          filter: spinning ? 'blur(2px)' : 'blur(0.5px)',
+          transition: stopping ? 'filter 0.15s' : 'none',
+        }}>
+          <style>{`
+            @keyframes reelScroll {
+              from { transform: translateY(0px); }
+              to   { transform: translateY(-${STRIP_H}px); }
+            }
+          `}</style>
+          {dupStrip.map((id, i) => <Cell key={i} id={id} size={cellSize} />)}
         </div>
       )}
 
-      {/* IDLE view — static symbols with win highlights */}
-      {!isMoving && (
+      {/* ── IDLE static symbols ── */}
+      {!moving && (
         <div
           ref={stripRef}
-          style={{ display:'flex', flexDirection:'column', alignItems:'center', gap, paddingTop: gap }}
+          style={{ display:'flex', flexDirection:'column', gap, paddingTop: gap / 2 }}
         >
-          {displaySyms.slice(0,3).map((id, i) => (
+          {symbols.map((id, i) => (
             <Cell key={i} id={id} size={cellSize} winning={winningRows.includes(i)} />
           ))}
         </div>
@@ -183,27 +152,32 @@ export const AnimatedReel = forwardRef(function AnimatedReel(
   );
 });
 
-// ── Cell ──────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Cell
+// ─────────────────────────────────────────────────────────────────────────────
 function Cell({ id, size = 58, winning = false }) {
   const color = SYMBOL_COLORS[id] || '#FFD700';
   const emoji = SYMBOL_EMOJI[id] || '🎰';
   return (
-    <div
-      className={winning ? 'symbol-winning' : undefined}
-      style={{
-        width: size, height: size, flexShrink: 0,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: Math.round(size * 0.55),
-        borderRadius: 10,
-        background: winning
-          ? `linear-gradient(145deg,${color}44,${color}11)`
-          : 'linear-gradient(145deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))',
-        border: `2px solid ${winning ? color : 'rgba(255,255,255,0.12)'}`,
-        boxShadow: winning ? `0 0 20px ${color},0 0 8px ${color}` : '0 2px 8px rgba(0,0,0,0.5)',
-        userSelect: 'none',
-        transformOrigin: 'center',
-      }}
-    >
+    <div style={{
+      width: size, height: size, flexShrink: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: Math.round(size * 0.55),
+      borderRadius: 10,
+      background: winning
+        ? `linear-gradient(145deg,${color}44,${color}11)`
+        : 'linear-gradient(145deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))',
+      border: `2px solid ${winning ? color : 'rgba(255,255,255,0.12)'}`,
+      boxShadow: winning ? `0 0 20px ${color},0 0 8px ${color}` : '0 2px 8px rgba(0,0,0,0.5)',
+      userSelect: 'none',
+      animation: winning ? 'symbolPulse 0.5s ease-in-out infinite' : 'none',
+    }}>
+      <style>{`
+        @keyframes symbolPulse {
+          0%,100% { transform:scale(1); }
+          50%      { transform:scale(1.18); }
+        }
+      `}</style>
       {emoji}
     </div>
   );
