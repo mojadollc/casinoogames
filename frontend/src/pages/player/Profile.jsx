@@ -24,6 +24,10 @@ export default function Profile() {
   const [emailForm, setEmailForm] = useState({ email: '', password: '' });
   const [emailLoading, setEmailLoading] = useState(false);
 
+  // Change username state
+  const [unForm, setUnForm] = useState({ username: '', password: '' });
+  const [unLoading, setUnLoading] = useState(false);
+
   useEffect(() => {
     if (user?.responsible_gaming) {
       setLimits({
@@ -46,11 +50,12 @@ export default function Profile() {
   }, [tab]);
 
   const changePassword = async () => {
+    setMessage('');
     if (pwForm.new_password !== pwForm.confirm_password) {
-      setMessage('New passwords do not match'); return;
+      setMessage('❌ New passwords do not match'); return;
     }
     if (pwForm.new_password.length < 8) {
-      setMessage('New password must be at least 8 characters'); return;
+      setMessage('❌ New password must be at least 8 characters'); return;
     }
     setPwLoading(true);
     try {
@@ -58,13 +63,13 @@ export default function Profile() {
       setMessage('✅ Password changed successfully');
       setPwForm({ current_password: '', new_password: '', confirm_password: '' });
     } catch (err) {
-      setMessage(err.response?.data?.error || 'Failed to change password');
+      setMessage('❌ ' + (err.response?.data?.error || 'Failed to change password'));
     }
     setPwLoading(false);
   };
 
   const changeEmail = async () => {
-    setPwLoading(true);
+    setMessage('');
     setEmailLoading(true);
     try {
       await authAPI.changeEmail(emailForm.email, emailForm.password);
@@ -72,10 +77,26 @@ export default function Profile() {
       setEmailForm({ email: '', password: '' });
       refreshProfile();
     } catch (err) {
-      setMessage(err.response?.data?.error || 'Failed to change email');
+      setMessage('❌ ' + (err.response?.data?.error || 'Failed to change email'));
     }
     setEmailLoading(false);
-    setPwLoading(false);
+  };
+
+  const changeUsername = async () => {
+    setMessage('');
+    if (unForm.username.length < 3) {
+      setMessage('❌ Username must be at least 3 characters'); return;
+    }
+    setUnLoading(true);
+    try {
+      await authAPI.changeUsername(unForm.username, unForm.password);
+      setMessage('✅ Username changed successfully');
+      setUnForm({ username: '', password: '' });
+      refreshProfile();
+    } catch (err) {
+      setMessage('❌ ' + (err.response?.data?.error || 'Failed to change username'));
+    }
+    setUnLoading(false);
   };
 
   const handleLogout = async () => {
@@ -167,6 +188,23 @@ export default function Profile() {
 
       {tab === 'security' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+          {/* Change Username */}
+          <div className="card">
+            <h3 style={{ marginBottom: '16px' }}>👤 Change Username</h3>
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>Current: <strong style={{ color: 'white' }}>{user.username}</strong></p>
+            <div className="input-group">
+              <label>New Username</label>
+              <input type="text" value={unForm.username} onChange={e => setUnForm({ ...unForm, username: e.target.value })} placeholder="Min 3 characters" />
+            </div>
+            <div className="input-group">
+              <label>Confirm with Password</label>
+              <input type="password" value={unForm.password} onChange={e => setUnForm({ ...unForm, password: e.target.value })} placeholder="Enter your password" />
+            </div>
+            <button className="btn btn-primary" onClick={changeUsername} disabled={unLoading || !unForm.username || !unForm.password}>
+              {unLoading ? 'Saving...' : 'Update Username'}
+            </button>
+          </div>
 
           {/* Change Password */}
           <div className="card">

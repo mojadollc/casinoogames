@@ -343,6 +343,28 @@ router.put('/change-password', authenticate, [
   }
 });
 
+// Change Username
+router.put('/change-username', authenticate, [
+  body('username').isLength({ min: 3, max: 50 }).trim(),
+  body('password').notEmpty(),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ error: 'Username must be 3–50 characters' });
+  const { username, password } = req.body;
+  try {
+    const result = await query('SELECT password_hash FROM users WHERE id = ?', [req.user.id]);
+    const match = await bcrypt.compare(password, result.rows[0].password_hash);
+    if (!match) return res.status(401).json({ error: 'Password is incorrect' });
+    const existing = await query('SELECT id FROM users WHERE username = ? AND id != ?', [username, req.user.id]);
+    if (existing.rows.length) return res.status(409).json({ error: 'Username already taken' });
+    await query('UPDATE users SET username = ?, updated_at = NOW() WHERE id = ?', [username, req.user.id]);
+    await query('INSERT INTO audit_logs (id, user_id, action, ip_address) VALUES (UUID(),?,?,?)', [req.user.id, 'change_username', req.ip]);
+    res.json({ message: 'Username updated successfully' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to change username' });
+  }
+});
+
 // Change Email
 router.put('/change-email', authenticate, [
   body('email').isEmail().normalizeEmail(),
