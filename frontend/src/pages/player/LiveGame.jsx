@@ -3,6 +3,172 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { gameAPI, walletAPI } from '../../services/api';
 import WebGLWheelView from '../../components/webgl/WebGLWheel.jsx';
 
+// ── Wheel Audio Engine ──────────────────────────────────────────────────────────
+let wAC = null;
+let wheelSpinNodes = null;
+let tickInterval = null;
+
+function getWAC() {
+  if (!wAC) { const A = window.AudioContext || window.webkitAudioContext; wAC = new A(); }
+  if (wAC.state === 'suspended') wAC.resume();
+  return wAC;
+}
+
+function makeNoise(ac) {
+  const buf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  return buf;
+}
+
+// Wheel spinning — ball rolling on track sound
+function startWheelSpinSound() {
+  const ac = getWAC();
+  const t  = ac.currentTime;
+  const master = ac.createGain();
+  master.gain.setValueAtTime(0, t);
+  master.gain.linearRampToValueAtTime(0.25, t + 0.4);
+  master.connect(ac.destination);
+
+  // Rolling ball: filtered noise through bandpass
+  const noise = ac.createBufferSource();
+  noise.buffer = makeNoise(ac);
+  noise.loop = true;
+  const bpf = ac.createBiquadFilter();
+  bpf.type = 'bandpass'; bpf.frequency.value = 800; bpf.Q.value = 2.5;
+  const nGain = ac.createGain(); nGain.gain.value = 0.5;
+  noise.connect(bpf); bpf.connect(nGain); nGain.connect(master);
+  noise.start();
+
+  // Mechanical whirr: sawtooth through lowpass
+  const whirr = ac.createOscillator();
+  whirr.type = 'sawtooth'; whirr.frequency.value = 62;
+  const lpf = ac.createBiquadFilter();
+  lpf.type = 'lowpass'; lpf.frequency.value = 200;
+  const wGain = ac.createGain(); wGain.gain.value = 0.3;
+  whirr.connect(lpf); lpf.connect(wGain); wGain.connect(master);
+  whirr.start();
+
+  // High shimmer
+  const shimmer = ac.createOscillator();
+  shimmer.type = 'sine'; shimmer.frequency.value = 2200;
+  const sGain = ac.createGain(); sGain.gain.value = 0.03;
+  shimmer.connect(sGain); sGain.connect(master);
+  shimmer.start();
+
+  wheelSpinNodes = { master, noise, whirr, shimmer };
+}
+
+function stopWheelSpinSound() {
+  if (!wheelSpinNodes || !wAC) return;
+  const { master, noise, whirr, shimmer } = wheelSpinNodes;
+  const t = wAC.currentTime;
+  master.gain.setValueAtTime(master.gain.value, t);
+  master.gain.linearRampToValueAtTime(0, t + 0.25);
+  setTimeout(() => {
+    try { noise.stop(); whirr.stop(); shimmer.stop(); } catch(e) {}
+    wheelSpinNodes = null;
+  }, 300);
+}
+
+// Segment tick — clicker sound as wheel passes each divider
+function startSegmentTicks(segmentCount, initialBpm = 420) {
+  stopSegmentTicks();
+  const ac = getWAC();
+  let bpm = initialBpm;
+  let lastTick = 0;
+
+  function tick() {
+    const t = ac.currentTime;
+    if (t - lastTick < 60 / bpm) return;
+    lastTick = t;
+
+    // Sharp click: noise burst through highpass
+    const buf = makeNoise(ac);
+    const src = ac.createBufferSource(); src.buffer = buf;
+    const hpf = ac.createBiquadFilter(); hpf.type = 'highpass'; hpf.frequency.value = 3500;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.35, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.025);
+    src.connect(hpf); hpf.connect(g); g.connect(ac.destination);
+    src.start(t); src.stop(t + 0.025);
+
+    // Slow down gradually
+    bpm = Math.max(60, bpm * 0.992);
+  }
+
+  tickInterval = setInterval(tick, 14);
+}
+
+function stopSegmentTicks() {
+  if (tickInterval) { clearInterval(tickInterval); tickInterval = null; }
+}
+
+// Final stop thud when wheel locks
+function playWheelStopSound() {
+  const ac = getWAC();
+  const t  = ac.currentTime;
+
+  // Heavy thud
+  const thud = ac.createOscillator(); const tg = ac.createGain();
+  thud.type = 'sine'; thud.frequency.setValueAtTime(180, t);
+  thud.frequency.exponentialRampToValueAtTime(50, t + 0.1);
+  tg.gain.setValueAtTime(0.6, t); tg.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+  thud.connect(tg); tg.connect(ac.destination); thud.start(t); thud.stop(t + 0.18);
+
+  // Metallic snap
+  const snap = ac.createBufferSource(); snap.buffer = makeNoise(ac);
+  const hpf = ac.createBiquadFilter(); hpf.type = 'highpass'; hpf.frequency.value = 2800;
+  const sg = ac.createGain();
+  sg.gain.setValueAtTime(0.45, t); sg.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+  snap.connect(hpf); hpf.connect(sg); sg.connect(ac.destination);
+  snap.start(t); snap.stop(t + 0.07);
+
+  // Spring resonance
+  const spring = ac.createOscillator(); const spg = ac.createGain();
+  spring.type = 'sine'; spring.frequency.setValueAtTime(380, t);
+  spring.frequency.exponentialRampToValueAtTime(240, t + 0.15);
+  spg.gain.setValueAtTime(0.2, t); spg.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+  spring.connect(spg); spg.connect(ac.destination); spring.start(t); spring.stop(t + 0.22);
+}
+
+// Win coin cascade
+function playWheelWinSound(big = false) {
+  const ac  = getWAC();
+  const t0  = ac.currentTime;
+  const cnt = big ? 20 : 10;
+  const dur = big ? 1.6 : 0.9;
+
+  for (let i = 0; i < cnt; i++) {
+    const ct = t0 + (i / cnt) * dur;
+    // Coin clink: tight bandpass noise
+    const buf = makeNoise(ac);
+    const src = ac.createBufferSource(); src.buffer = buf;
+    const bpf = ac.createBiquadFilter();
+    bpf.type = 'bandpass'; bpf.frequency.value = 2800 + Math.random() * 1200; bpf.Q.value = 20;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.3, ct); g.gain.exponentialRampToValueAtTime(0.001, ct + 0.08);
+    src.connect(bpf); bpf.connect(g); g.connect(ac.destination);
+    src.start(ct); src.stop(ct + 0.08);
+    // Resonant ring
+    const ring = ac.createOscillator(); const rg = ac.createGain();
+    ring.type = 'sine'; ring.frequency.value = 1500 + Math.random() * 700;
+    rg.gain.setValueAtTime(0.14, ct); rg.gain.exponentialRampToValueAtTime(0.001, ct + 0.15);
+    ring.connect(rg); rg.connect(ac.destination); ring.start(ct); ring.stop(ct + 0.15);
+  }
+
+  // Rising chime for big wins
+  if (big) {
+    [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
+      const t = t0 + dur + i * 0.11;
+      const o = ac.createOscillator(); const g = ac.createGain();
+      o.type = 'sine'; o.frequency.value = freq;
+      g.gain.setValueAtTime(0.24, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+      o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + 0.45);
+    });
+  }
+}
+
 const GAME_CONFIG = {
   'crazy-time': {
     title: 'Crazy Time', emoji: '🎡', accent: '#FF2D75',
@@ -99,15 +265,16 @@ export default function LiveGame() {
 
   const onSpinEnd = useCallback(() => {
     const pending = pendingRef.current;
-    if (!pending) {
-      setSpinning(false);
-      return;
-    }
+    stopWheelSpinSound();
+    stopSegmentTicks();
+    playWheelStopSound();
+    if (!pending) { setSpinning(false); return; }
     const { displaySeg, totalWin } = pending;
     setResult(displaySeg);
     setLastWin(totalWin);
     setHistory(prev => [{ segment: displaySeg, win: totalWin }, ...prev].slice(0, 10));
     if (totalWin > 0) {
+      setTimeout(() => playWheelWinSound(totalWin > 500), 180);
       setCelebrate(true);
       setMessage(`🎉 ${displaySeg.label}! You won ₱${totalWin.toLocaleString()}`);
       setTimeout(() => setCelebrate(false), 100);
@@ -127,6 +294,8 @@ export default function LiveGame() {
     setCelebrate(false);
     setMessage('Wheel is spinning…');
     setTargetIndex(null);
+    startWheelSpinSound();
+    startSegmentTicks(config.segments.length);
 
     try {
       // Server-authoritative: admin win_rate / force_outcome / max_payout / dry_run
@@ -152,6 +321,8 @@ export default function LiveGame() {
       // Kick WebGL spin toward this index
       setTargetIndex(idx);
     } catch (err) {
+      stopWheelSpinSound();
+      stopSegmentTicks();
       setMessage(err.response?.data?.error || err.message || 'Spin failed');
       setSpinning(false);
     }
@@ -187,7 +358,7 @@ export default function LiveGame() {
           <div style={{ fontWeight: 900, color: config.accent, fontSize: 15 }}>
             {config.emoji} {game.name || config.title}
           </div>
-          <div style={{ fontSize: 10, color: '#6a6a8a', letterSpacing: 1 }}>WEBGL · LIVE · REAL MONEY</div>
+          <div style={{ fontSize: 10, color: '#6a6a8a', letterSpacing: 1 }}>LIVE · REAL MONEY</div>
         </div>
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: 10, color: '#6a6a8a' }}>BALANCE</div>
