@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { walletAPI, paymentAPI, authAPI } from '../../services/api';
 import { WalletBalanceSkeleton, TransactionSkeleton } from '../../components/shared/Skeleton';
+import { useSearchParams } from 'react-router-dom';
 
 const KYC_STEPS = [
   { type: 'selfie', label: 'Take a Selfie',   icon: '🤳' },
@@ -32,7 +33,21 @@ export default function Wallet() {
   const [walletLoading, setWalletLoading] = useState(true);
   const [txLoading, setTxLoading] = useState(true);
   const [summary, setSummary] = useState({ winnings_today: 0, winnings_total: 0, bets_total: 0 });
-  const [fieldAlert, setFieldAlert] = useState(null); // { title, message, type: 'error'|'success' }
+  const [fieldAlert, setFieldAlert] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Handle Xendit redirect back — show result popup and refresh balance
+  useEffect(() => {
+    const depositStatus = searchParams.get('deposit');
+    if (depositStatus === 'success') {
+      setFieldAlert({ title: '✅ Deposit Successful!', message: 'Your deposit has been received and your balance will be updated shortly.', type: 'success' });
+      walletAPI.balance().then(({ data }) => setBalance(data)).catch(() => {});
+      setSearchParams({}, { replace: true });
+    } else if (depositStatus === 'failed') {
+      setFieldAlert({ title: '❌ Deposit Failed', message: 'Your deposit was not completed. No money was deducted. Please try again.', type: 'error' });
+      setSearchParams({}, { replace: true });
+    }
+  }, []); // { title, message, type: 'error'|'success' }
 
   useEffect(() => {
     walletAPI.summary().then(({ data }) => setSummary(data)).catch(() => {});
