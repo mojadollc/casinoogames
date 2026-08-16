@@ -336,6 +336,8 @@ export default function GamePlay() {
   const [bigWin, setBigWin] = useState(false);
   const [gameType, setGameType] = useState('slots');
   const [showPaytable, setShowPaytable] = useState(false);
+  const [spinBtnPressed, setSpinBtnPressed] = useState(false);
+  const [displayWin, setDisplayWin] = useState(0);
 
   const spinningSymbols = useRef(null);
 
@@ -391,10 +393,32 @@ export default function GamePlay() {
     await new Promise(r => setTimeout(r, STOP_ANIM));
   };
 
+  // Sequential stop delays (cumulative ms after API returns)
+  const STOP_DELAYS = [0, 120, 300, 520, 770];
+
+  const animateWinCounter = (target) => {
+    setDisplayWin(0);
+    const steps = 30;
+    const step = target / steps;
+    let current = 0;
+    let count = 0;
+    const t = setInterval(() => {
+      count++;
+      current = count >= steps ? target : Math.round(step * count);
+      setDisplayWin(current);
+      if (count >= steps) clearInterval(t);
+    }, 40);
+  };
+
   const spin = async () => {
     if (spinning) return;
+    // Button press feedback
+    setSpinBtnPressed(true);
+    setTimeout(() => setSpinBtnPressed(false), 150);
+
     setSpinning(true);
     setLastWin(0);
+    setDisplayWin(0);
     setMessage('');
     setWinningSymbols([]);
     setJackpotWon(false);
@@ -405,11 +429,9 @@ export default function GamePlay() {
 
     try {
       const { data } = await gameAPI.spin(game.id, bet);
-      // Stop reels sequentially after API responds
-      const BASE = 0;
-      const STAGGER = 200;
+      // Stop reels sequentially with staggered delays
       for (let i = 0; i < 5; i++) {
-        await new Promise(r => setTimeout(r, i === 0 ? BASE : STAGGER));
+        await new Promise(r => setTimeout(r, i === 0 ? STOP_DELAYS[0] : STOP_DELAYS[i] - STOP_DELAYS[i-1]));
         playReelStopSound();
         setSpinProgress(prev => ({ ...prev, [i]: false }));
         setDisplayGrid(prev => {
@@ -418,13 +440,14 @@ export default function GamePlay() {
           return next;
         });
       }
-      await new Promise(r => setTimeout(r, 400));
+      await new Promise(r => setTimeout(r, 350));
       setDisplayGrid(data.grid);
       setBalance(data.balance);
       setLastWin(data.totalWin);
 
       if (data.totalWin > 0) {
         playWinSound();
+        animateWinCounter(data.totalWin);
         if (data.totalWin >= bet * 25) {
           setBigWin(true);
           triggerConfetti();
@@ -435,7 +458,6 @@ export default function GamePlay() {
         } else {
           setMessage(`You won ₱${data.totalWin.toLocaleString()}`);
         }
-        // Highlight only winning payline positions
         if (data.paylineWins && data.paylineWins.length > 0 && data.grid) {
           const PAYLINES = [
             [1,1,1,1,1],[0,0,0,0,0],[2,2,2,2,2],[0,1,2,1,0],[2,1,0,1,2],
@@ -653,7 +675,7 @@ export default function GamePlay() {
         <div style={{
           textAlign: 'center',
           marginBottom: '16px',
-          animation: 'winPop 0.5s ease-out'
+          animation: 'winPop 0.5s cubic-bezier(0.34,1.56,0.64,1) both'
         }}>
           <div style={{
             fontSize: jackpotWon ? '36px' : bigWin ? '32px' : '28px',
@@ -667,7 +689,7 @@ export default function GamePlay() {
             animation: jackpotWon ? 'rainbowGlow 0.5s ease infinite' : 'goldShine 2s linear infinite',
             filter: 'drop-shadow(0 0 20px rgba(255, 215, 0, 0.8))'
           }}>
-            {jackpotWon ? 'JACKPOT! ' : bigWin ? 'BIG WIN! ' : ''}₱{lastWin.toLocaleString()}
+            {jackpotWon ? 'JACKPOT! ' : bigWin ? 'BIG WIN! ' : ''}₱{displayWin > 0 ? displayWin.toLocaleString() : lastWin.toLocaleString()}
           </div>
         </div>
       )}
@@ -793,8 +815,11 @@ export default function GamePlay() {
             cursor: (spinning || balance < bet || balance <= 0) ? 'not-allowed' : 'pointer',
             boxShadow: spinning
               ? 'none'
-              : '0 0 30px rgba(255, 215, 0, 0.6), inset 0 0 20px rgba(255, 255, 255, 0.2)',
-            transition: 'all 0.3s ease',
+              : spinBtnPressed
+                ? '0 0 50px rgba(255,215,0,0.9), inset 0 0 30px rgba(255,255,255,0.4)'
+                : '0 0 30px rgba(255, 215, 0, 0.6), inset 0 0 20px rgba(255, 255, 255, 0.2)',
+            transform: spinBtnPressed ? 'scale(0.92)' : 'scale(1)',
+            transition: spinBtnPressed ? 'transform 0.08s ease, box-shadow 0.08s ease' : 'transform 0.15s ease, box-shadow 0.15s ease',
             textTransform: 'uppercase',
             letterSpacing: '2px',
             animation: spinning ? 'spinPulse 0.3s ease infinite' : 'none'
@@ -991,10 +1016,14 @@ function ThemedReel({ finalSymbols, spinning, cellSize = 58, gap = 6, winningRow
         wrapRef.current.style.borderColor = accent;
         wrapRef.current.style.boxShadow = `inset 0 0 20px ${accent}55,0 0 12px ${accent}44`;
       }
-      const TARGET = CELL * 0.6;
+      const TARGET = CELL * 0.6;   // max speed (px/frame)
+      const ACCEL = TARGET / 15;    // reach full speed in ~15 frames (~250ms)
       const STRIP_PX = 20 * CELL;
       intervalRef.current = setInterval(() => {
-        if (speedRef.current < TARGET) speedRef.current = Math.min(TARGET, speedRef.current + TARGET * 0.1);
+        // Ease-in acceleration: speed ramps up over first ~250ms
+        if (speedRef.current < TARGET) {
+          speedRef.current = Math.min(TARGET, speedRef.current + ACCEL);
+        }
         posRef.current += speedRef.current;
         if (posRef.current >= STRIP_PX - VIEW_H) {
           posRef.current = 0;
@@ -1002,22 +1031,41 @@ function ThemedReel({ finalSymbols, spinning, cellSize = 58, gap = 6, winningRow
         }
         if (stripRef.current) {
           stripRef.current.style.transform = `translateY(-${posRef.current.toFixed(1)}px)`;
+          // blur proportional to speed: 0 at start → 2px at full speed
           stripRef.current.style.filter = `blur(${((speedRef.current/TARGET)*2).toFixed(1)}px)`;
         }
       }, 16);
     }
 
     if (!spinning && wasSpinning) {
-      // STOP
+      // STOP — decelerate then snap to finals
+      const stopSpeed = speedRef.current;
+      const DECEL_FRAMES = 8; // ~130ms deceleration
+      let frame = 0;
       clearInterval(intervalRef.current);
-      intervalRef.current = null;
-      const finals = finalSymbols?.slice(0,3).map(s=>(s&&s.id)||s||'cherry') ?? randomThemedSymbols(gameSlug);
-      setDisplaySyms(finals);
-      setIsMoving(false);
-      if (wrapRef.current) {
-        wrapRef.current.style.borderColor = 'rgba(255,215,0,0.2)';
-        wrapRef.current.style.boxShadow = 'inset 0 0 10px rgba(0,0,0,0.6)';
-      }
+      intervalRef.current = setInterval(() => {
+        frame++;
+        const t = frame / DECEL_FRAMES;
+        const currentSpeed = stopSpeed * (1 - t);
+        posRef.current += currentSpeed;
+        const STRIP_PX = 20 * CELL;
+        if (posRef.current >= STRIP_PX - VIEW_H) posRef.current = 0;
+        if (stripRef.current) {
+          stripRef.current.style.transform = `translateY(-${posRef.current.toFixed(1)}px)`;
+          stripRef.current.style.filter = `blur(${(currentSpeed / stopSpeed * 2).toFixed(1)}px)`;
+        }
+        if (frame >= DECEL_FRAMES) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+          const finals = finalSymbols?.slice(0,3).map(s=>(s&&s.id)||s||'cherry') ?? randomThemedSymbols(gameSlug);
+          setDisplaySyms(finals);
+          setIsMoving(false);
+          if (wrapRef.current) {
+            wrapRef.current.style.borderColor = 'rgba(255,215,0,0.2)';
+            wrapRef.current.style.boxShadow = 'inset 0 0 10px rgba(0,0,0,0.6)';
+          }
+        }
+      }, 16);
     }
   }, [spinning]); // eslint-disable-line
 
