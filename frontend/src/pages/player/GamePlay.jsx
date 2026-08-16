@@ -394,7 +394,8 @@ export default function GamePlay() {
   };
 
   // Sequential stop delays (cumulative ms after API returns)
-  const STOP_DELAYS = [0, 120, 300, 520, 770];
+  // Wider gaps = more dramatic CLACK-CLACK-CLACK feel
+  const STOP_DELAYS = [0, 200, 420, 680, 980];
 
   const animateWinCounter = (target) => {
     setDisplayWin(0);
@@ -1009,50 +1010,54 @@ function ThemedReel({ finalSymbols, spinning, cellSize = 58, gap = 6, winningRow
       if (intervalRef.current) clearInterval(intervalRef.current);
       posRef.current = 0;
       speedRef.current = 0;
-      const syms = Array.from({length:20}, () => randomThemedSymbols(gameSlug)[0]);
+      const syms = Array.from({length:30}, () => randomThemedSymbols(gameSlug)[0]);
       buildStrip(syms);
       setIsMoving(true);
       if (wrapRef.current) {
         wrapRef.current.style.borderColor = accent;
         wrapRef.current.style.boxShadow = `inset 0 0 20px ${accent}55,0 0 12px ${accent}44`;
       }
-      const TARGET = CELL * 0.6;   // max speed (px/frame)
-      const ACCEL = TARGET / 15;    // reach full speed in ~15 frames (~250ms)
-      const STRIP_PX = 20 * CELL;
+      // Real slot machine: ~600px/sec = 10px/frame at 60fps
+      // CELL=64px → TARGET=0.15*64≈9.6px/frame ≈ 576px/sec
+      const TARGET = CELL * 0.15;
+      // Accelerate over ~500ms (30 frames)
+      const ACCEL = TARGET / 30;
+      const STRIP_PX = 30 * CELL;
       intervalRef.current = setInterval(() => {
-        // Ease-in acceleration: speed ramps up over first ~250ms
         if (speedRef.current < TARGET) {
           speedRef.current = Math.min(TARGET, speedRef.current + ACCEL);
         }
         posRef.current += speedRef.current;
         if (posRef.current >= STRIP_PX - VIEW_H) {
           posRef.current = 0;
-          buildStrip(Array.from({length:20}, () => randomThemedSymbols(gameSlug)[0]));
+          buildStrip(Array.from({length:30}, () => randomThemedSymbols(gameSlug)[0]));
         }
         if (stripRef.current) {
           stripRef.current.style.transform = `translateY(-${posRef.current.toFixed(1)}px)`;
-          // blur proportional to speed: 0 at start → 2px at full speed
-          stripRef.current.style.filter = `blur(${((speedRef.current/TARGET)*2).toFixed(1)}px)`;
+          // blur: 0 at start → 1.5px at full speed (subtle, readable)
+          stripRef.current.style.filter = `blur(${((speedRef.current/TARGET)*1.5).toFixed(1)}px)`;
         }
       }, 16);
     }
 
     if (!spinning && wasSpinning) {
-      // STOP — decelerate then snap to finals
-      const stopSpeed = speedRef.current;
-      const DECEL_FRAMES = 8; // ~130ms deceleration
+      // STOP — ease-out deceleration over ~320ms then snap
+      const stopSpeed = speedRef.current || (CELL * 0.15);
+      const DECEL_FRAMES = 20; // 20 × 16ms = 320ms coast-to-stop
       let frame = 0;
       clearInterval(intervalRef.current);
       intervalRef.current = setInterval(() => {
         frame++;
+        // Ease-out curve: fast at first, slow at end
         const t = frame / DECEL_FRAMES;
-        const currentSpeed = stopSpeed * (1 - t);
+        const eased = 1 - (t * t); // quadratic ease-out
+        const currentSpeed = stopSpeed * eased;
         posRef.current += currentSpeed;
-        const STRIP_PX = 20 * CELL;
+        const STRIP_PX = 30 * CELL;
         if (posRef.current >= STRIP_PX - VIEW_H) posRef.current = 0;
         if (stripRef.current) {
           stripRef.current.style.transform = `translateY(-${posRef.current.toFixed(1)}px)`;
-          stripRef.current.style.filter = `blur(${(currentSpeed / stopSpeed * 2).toFixed(1)}px)`;
+          stripRef.current.style.filter = `blur(${(eased * 1.5).toFixed(1)}px)`;
         }
         if (frame >= DECEL_FRAMES) {
           clearInterval(intervalRef.current);
