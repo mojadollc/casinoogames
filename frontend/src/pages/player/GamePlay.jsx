@@ -982,11 +982,11 @@ function ThemedReel({ finalSymbols, spinning, cellSize = 58, gap = 6, winningRow
   const STRIP_LEN = 40;                      // symbols in the looping strip
   const STRIP_PX  = STRIP_LEN * CELL;
   // Speed constants (px/frame at 60fps)
-  const SPEED_MAX  = CELL * 0.14;  // ~537px/sec — real machine pace
-  const ACCEL_DUR  = 500;          // ms to reach full speed
-  const DECEL_DUR  = 380;          // ms to coast down
-  const BOUNCE_AMT = cellSize * 0.18; // overshoot px on landing
-  const BOUNCE_DUR = 180;          // ms for bounce settle
+  const SPEED_MAX  = CELL * 0.38;  // ~1450px/sec — visible rolling pace
+  const ACCEL_DUR  = 320;          // ms to reach full speed
+  const DECEL_DUR  = 500;          // ms to coast down (longer = more satisfying)
+  const BOUNCE_AMT = cellSize * 0.22; // overshoot px on landing
+  const BOUNCE_DUR = 220;          // ms for bounce settle
 
   const wrapRef    = useRef(null);
   const canvasRef  = useRef(null); // single <div> we translate
@@ -1112,8 +1112,8 @@ function ThemedReel({ finalSymbols, spinning, cellSize = 58, gap = 6, winningRow
       refillStrip();
     }
 
-    // Motion blur proportional to speed ratio (max 1.8px)
-    const blur = ((speedRef.current / SPEED_MAX) * 1.8).toFixed(2);
+    // Motion blur proportional to speed ratio (max 2.5px)
+    const blur = ((speedRef.current / SPEED_MAX) * 2.5).toFixed(2);
     el.style.transform = `translateY(-${posRef.current.toFixed(2)}px)`;
     el.style.filter    = blur > 0.1 ? `blur(${blur}px)` : 'none';
 
