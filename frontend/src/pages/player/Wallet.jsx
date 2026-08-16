@@ -32,6 +32,7 @@ export default function Wallet() {
   const [walletLoading, setWalletLoading] = useState(true);
   const [txLoading, setTxLoading] = useState(true);
   const [summary, setSummary] = useState({ winnings_today: 0, winnings_total: 0, bets_total: 0 });
+  const [fieldAlert, setFieldAlert] = useState(null); // { title, message, type: 'error'|'success' }
 
   useEffect(() => {
     walletAPI.summary().then(({ data }) => setSummary(data)).catch(() => {});
@@ -129,16 +130,33 @@ export default function Wallet() {
   const handleWithdraw = async (e) => {
     e.preventDefault();
     const amt = parseFloat(withdrawForm.amount);
+    if (!withdrawForm.amount) {
+      setFieldAlert({ title: '💰 Amount Required', message: 'Please enter the withdrawal amount before proceeding.', type: 'error' });
+      return;
+    }
     if (!Number.isFinite(amt) || amt < 100) {
-      setMessage('Minimum withdrawal is ₱100');
+      setFieldAlert({ title: '💰 Invalid Amount', message: 'Minimum withdrawal amount is ₱100. Please enter a valid amount.', type: 'error' });
       return;
     }
     if (amt > 500000) {
-      setMessage('Maximum withdrawal is ₱500,000');
+      setFieldAlert({ title: '💰 Amount Too Large', message: 'Maximum withdrawal amount is ₱500,000 per transaction.', type: 'error' });
       return;
     }
-    if (!withdrawForm.bank_code || !withdrawForm.account_number || !withdrawForm.account_name) {
-      setMessage('Please fill in all bank details');
+    if (!withdrawForm.bank_code) {
+      setFieldAlert({ title: '📲 Select Payment Channel', message: 'Please select either GCash or Maya as your withdrawal channel.', type: 'error' });
+      return;
+    }
+    if (!withdrawForm.account_number) {
+      const ch = withdrawForm.bank_code === 'GCASH' ? 'GCash' : 'Maya';
+      setFieldAlert({ title: `📱 ${ch} Number Required`, message: `Please enter your registered ${ch} phone number (e.g. 09XXXXXXXXX).`, type: 'error' });
+      return;
+    }
+    if (withdrawForm.account_number.length < 10 || withdrawForm.account_number.length > 13) {
+      setFieldAlert({ title: '📱 Invalid Phone Number', message: 'Phone number must be 10–13 digits (e.g. 09123456789). Please double-check.', type: 'error' });
+      return;
+    }
+    if (!withdrawForm.account_name) {
+      setFieldAlert({ title: '👤 Account Name Required', message: 'Please enter the full name registered on your GCash or Maya account.', type: 'error' });
       return;
     }
     setLoading(true);
@@ -146,10 +164,10 @@ export default function Wallet() {
       await paymentAPI.withdraw({ ...withdrawForm, amount: amt });
       setShowWithdraw(false);
       setWithdrawForm({ amount: '', bank_code: '', account_number: '', account_name: '' });
-      setMessage('✅ Withdrawal request submitted! Pending admin approval.');
+      setFieldAlert({ title: '✅ Withdrawal Submitted!', message: 'Your withdrawal request has been submitted and is pending admin approval. You will be notified once processed.', type: 'success' });
       walletAPI.balance().then(({ data }) => setBalance(data));
     } catch (err) {
-      setMessage('❌ ' + (err.response?.data?.error || 'Withdrawal failed'));
+      setFieldAlert({ title: '❌ Withdrawal Failed', message: err.response?.data?.error || 'Something went wrong. Please try again.', type: 'error' });
     }
     setLoading(false);
   };
@@ -485,6 +503,27 @@ export default function Wallet() {
           </div>
         </div>
       )}
+      {/* Field Alert Modal */}
+      {fieldAlert && (
+        <div className="modal-overlay" onClick={() => setFieldAlert(null)} style={{ zIndex: 9999 }}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '340px', textAlign: 'center', padding: '28px 24px' }}>
+            <div style={{ fontSize: '48px', marginBottom: '12px' }}>
+              {fieldAlert.type === 'success' ? '✅' : '⚠️'}
+            </div>
+            <h3 style={{ margin: '0 0 10px', fontSize: '17px', color: fieldAlert.type === 'success' ? '#00f5a0' : '#ff4757' }}>
+              {fieldAlert.title}
+            </h3>
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.6, margin: '0 0 20px' }}>
+              {fieldAlert.message}
+            </p>
+            <button
+              className={`btn ${fieldAlert.type === 'success' ? 'btn-success' : 'btn-danger'}`}
+              onClick={() => setFieldAlert(null)}
+              style={{ width: '100%', fontWeight: '700' }}
+            >
+              {fieldAlert.type === 'success' ? 'Great!' : 'Got it'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
-  );
-}
