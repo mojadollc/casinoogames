@@ -196,7 +196,7 @@ router.get('/leaderboard', authenticate, async (req, res) => {
     const result = await query(`
       SELECT u.username, SUM(gr.win_amount) as total_wins, COUNT(*) as total_spins
       FROM game_rounds gr JOIN users u ON u.id = gr.user_id
-      WHERE gr.created_at > DATE_SUB(NOW(), INTERVAL 1 WEEK)
+      WHERE gr.created_at > DATE_SUB(NOW(), INTERVAL 1 WEEK) AND u.role_id = 1
       GROUP BY u.id, u.username ORDER BY total_wins DESC LIMIT 20
     `);
     res.json(result.rows);
