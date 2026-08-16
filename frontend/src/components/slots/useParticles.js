@@ -8,50 +8,23 @@ function isMobile() {
 }
 
 export default function useParticles(canvasRef) {
-  const appRef = useRef(null);
   const particlesRef = useRef([]);
   const rafRef = useRef(null);
-  const readyRef = useRef(false);
 
+  // Keep canvas sized to viewport
   useEffect(() => {
-    if (!canvasRef?.current) return;
-    let app;
-
-    (async () => {
-      try {
-        const PIXI = await import('pixi.js');
-        app = new PIXI.Application();
-        await app.init({
-          canvas: canvasRef.current,
-          width: window.innerWidth,
-          height: window.innerHeight,
-          backgroundAlpha: 0,
-          antialias: false,
-          resolution: 1,
-        });
-        appRef.current = app;
-        readyRef.current = true;
-
-        // Resize handler
-        const onResize = () => {
-          app.renderer.resize(window.innerWidth, window.innerHeight);
-        };
-        window.addEventListener('resize', onResize);
-        return () => window.removeEventListener('resize', onResize);
-      } catch (_) {}
-    })();
-
-    return () => {
-      readyRef.current = false;
-      if (app) app.destroy(false);
+    const resize = () => {
+      const c = canvasRef?.current;
+      if (!c) return;
+      c.width = window.innerWidth;
+      c.height = window.innerHeight;
     };
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
   }, [canvasRef]);
 
   const spawnParticles = useCallback((config) => {
-    if (!readyRef.current || !appRef.current) return;
-    const PIXI = appRef.current.renderer.constructor._plugin?.PIXI;
-
-    // Fallback: use canvas 2D if PixiJS not ready
     const canvas = canvasRef?.current;
     if (!canvas) return;
     const c2d = canvas.getContext('2d');

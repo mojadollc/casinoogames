@@ -276,15 +276,19 @@ export default function SlotGame() {
 
   const spinReels = (finalReels) => {
     return new Promise((resolve) => {
-      spinResolveRef.current = resolve;
-      stoppedCountRef.current = 0;
+      // Reset state synchronously before triggering spin
       setWinningLines([]);
       setLastWin(0);
       setMessage('');
       setBigWinAmount(0);
       setReels(finalReels);
-      setSpinning(true);
-      sounds.play('whoosh');
+      stoppedCountRef.current = 0;
+      spinResolveRef.current = resolve;
+      // Small delay so React flushes state before AnimatedReel sees spinning=true
+      setTimeout(() => {
+        setSpinning(true);
+        sounds.play('whoosh');
+      }, 16);
     });
   };
 
@@ -292,7 +296,7 @@ export default function SlotGame() {
   const handleReelStop = useCallback(() => {
     sounds.play('clack');
     stoppedCountRef.current += 1;
-    if (stoppedCountRef.current === 5) {
+    if (stoppedCountRef.current >= 5) {
       stoppedCountRef.current = 0;
       setSpinning(false);
       spinResolveRef.current?.();
@@ -343,11 +347,24 @@ export default function SlotGame() {
           setMessage(`🎉 Win! ₱${data.totalWin.toLocaleString()}`);
         }
         
-        // Highlight winning paylines from engine response when available
+        // Highlight winning paylines — engine returns payline INDEX, map to row arrays
+        // DEFAULT_CONFIG paylines[1] = [1,1,1,1,1] (middle row), etc.
+        const PAYLINES = [
+          [1,1,1,1,1],[0,0,0,0,0],[2,2,2,2,2],
+          [0,1,2,1,0],[2,1,0,1,2],[0,0,1,2,2],
+          [2,2,1,0,0],[1,0,0,0,1],[1,2,2,2,1],
+          [0,1,1,1,0],[2,1,1,1,2],[1,0,1,0,1],
+          [1,2,1,2,1],[0,1,0,1,0],[2,1,2,1,2],
+          [1,1,0,1,1],[1,1,2,1,1],[0,0,1,0,0],
+          [2,2,1,2,2],[0,2,0,2,0],
+        ];
         if (data.paylineWins && data.paylineWins.length > 0) {
-          setWinningLines(data.paylineWins.map(w => w.payline));
+          setWinningLines(data.paylineWins
+            .map(w => PAYLINES[w.payline])
+            .filter(Boolean)
+          );
         } else if (data.grid) {
-          setWinningLines([[0, 1, 2, 3, 4]]);
+          setWinningLines([PAYLINES[0]]);
         }
       }
 
@@ -613,7 +630,7 @@ export default function SlotGame() {
                   winningRows={winRows}
                   accent='#FFD700'
                   stopDelay={REEL_STOP_DELAYS[ci]}
-                  onStop={() => handleReelStop(ci)}
+                  onStop={handleReelStop}
                 />
               );
             })}
