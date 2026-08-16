@@ -44,10 +44,12 @@ export default function Wallet() {
 
   useEffect(() => {
     setTxLoading(true);
-    walletAPI.transactions({ page, limit: LIMIT })
+    const params = { page, limit: LIMIT };
+    if (txTab !== 'all') params.type = txTab;
+    walletAPI.transactions(params)
       .then(({ data }) => { setTransactions(data.transactions); setTotalTx(data.total); })
       .finally(() => setTxLoading(false));
-  }, [page]);
+  }, [page, txTab]);
 
   const handleDeposit = async (e) => {
     e.preventDefault();
@@ -216,12 +218,11 @@ export default function Wallet() {
         ) : (() => {
           const TX_ICONS = { win: '🏆', bet: '🎰', deposit: '💳', withdraw: '🏦', bonus: '🎁', refund: '↩️', free_spin: '🎡' };
           const TX_COLORS = { win: '#00f5a0', bet: '#ff7043', deposit: '#4fc3f7', withdraw: '#ce93d8', bonus: '#ffd700', refund: '#80cbc4', free_spin: '#ffb74d' };
-          const filtered = txTab === 'all' ? transactions : transactions.filter(tx => tx.type?.startsWith(txTab));
-          return filtered.length === 0 ? (
+          return transactions.length === 0 ? (
             <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>No {txTab === 'all' ? '' : txTab} transactions yet</p>
           ) : (
             <>
-              {filtered.map((tx) => {
+              {transactions.map((tx) => {
                 const ttype = tx.type || 'bet';
                 const icon  = TX_ICONS[ttype] || TX_ICONS[ttype.split('_')[0]] || '💰';
                 const color = TX_COLORS[ttype] || TX_COLORS[ttype.split('_')[0]] || '#aaa';

@@ -50,10 +50,10 @@ router.get('/transactions', authenticate, async (req, res) => {
     const params = [req.user.id];
     const countParams = [req.user.id];
     if (type) {
-      sql += ' AND type = ?';
-      params.push(type);
-      countSql += ' AND type = ?';
-      countParams.push(type);
+      sql += ' AND type LIKE ?';
+      params.push(type + '%');
+      countSql += ' AND type LIKE ?';
+      countParams.push(type + '%');
     }
     sql += ` ORDER BY created_at DESC LIMIT ${limitNum} OFFSET ${offset}`;
 
