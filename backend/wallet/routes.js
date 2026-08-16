@@ -166,7 +166,7 @@ router.get('/summary', authenticate, async (req, res) => {
   try {
     const [todayWin, totalWin, totalBet] = await Promise.all([
       query(
-        "SELECT COALESCE(SUM(amount),0) AS total FROM wallet_transactions WHERE user_id = ? AND type IN ('win','free_spin_win','jackpot') AND DATE(created_at) = CURDATE()",
+        "SELECT COALESCE(SUM(amount),0) AS total FROM wallet_transactions WHERE user_id = ? AND type IN ('win','free_spin_win','jackpot') AND DATE(CONVERT_TZ(created_at,'+00:00','+08:00')) = CURDATE()",
         [req.user.id]
       ),
       query(
