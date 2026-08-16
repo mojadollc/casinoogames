@@ -241,164 +241,264 @@ const getThemedSymbol = (slug, symbolId) => {
   return DEFAULT_SYMBOLS[symbolId] || { icon: '❓', name: symbolId, value: 5 };
 };
 
-// ── Audio Engine ────────────────────────────────────────────────────────────
+// ── Audio Engine ─────────────────────────────────────────────────────────────
+// Real slot machine sound design:
+//   spin  → filtered white noise + motor hum + rhythmic reel tick
+//   stop  → percussive thud + metallic snap + spring resonance
+//   win   → coin cascade + bell chime melody
+//   jackpot → orchestral fanfare + coin shower + shimmer tail
 let audioContext = null;
-let spinLoopNodes = null; // holds the continuous spin loop so we can stop it
+let spinLoopNodes = null;
 
 function getAC() {
   if (!audioContext) {
     const AC = window.AudioContext || window.webkitAudioContext;
     audioContext = new AC();
   }
-  // Resume if suspended (browser autoplay policy)
   if (audioContext.state === 'suspended') audioContext.resume();
   return audioContext;
 }
 
-// Mechanical whirring loop — runs for the entire spin duration
+// Create a white-noise buffer (1 sec, mono)
+function makeNoiseBuffer(ac) {
+  const frames = ac.sampleRate;
+  const buf = ac.createBuffer(1, frames, ac.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < frames; i++) data[i] = Math.random() * 2 - 1;
+  return buf;
+}
+
+// ── SPIN: continuous mechanical reel sound ───────────────────────────────────
 const startSpinSound = () => {
   const ac = getAC();
+  const t  = ac.currentTime;
   const master = ac.createGain();
-  master.gain.setValueAtTime(0, ac.currentTime);
-  master.gain.linearRampToValueAtTime(0.18, ac.currentTime + 0.25); // fade in
+  master.gain.setValueAtTime(0, t);
+  master.gain.linearRampToValueAtTime(0.22, t + 0.3);
   master.connect(ac.destination);
 
-  // Layer 1: low mechanical hum (sawtooth)
-  const hum = ac.createOscillator();
-  const humGain = ac.createGain();
-  hum.type = 'sawtooth';
-  hum.frequency.setValueAtTime(55, ac.currentTime);
-  humGain.gain.value = 0.4;
-  hum.connect(humGain);
-  humGain.connect(master);
-  hum.start();
+  // 1. White-noise filtered through bandpass → rushing air / belt sound
+  const noiseBuf = makeNoiseBuffer(ac);
+  const noise    = ac.createBufferSource();
+  noise.buffer   = noiseBuf;
+  noise.loop     = true;
+  const bpf      = ac.createBiquadFilter();
+  bpf.type       = 'bandpass';
+  bpf.frequency.value = 320;
+  bpf.Q.value    = 1.8;
+  const noiseGain = ac.createGain();
+  noiseGain.gain.value = 0.35;
+  noise.connect(bpf);
+  bpf.connect(noiseGain);
+  noiseGain.connect(master);
+  noise.start();
 
-  // Layer 2: mid clicking rattle (filtered noise via fast oscillator)
-  const rattle = ac.createOscillator();
-  const rattleGain = ac.createGain();
-  rattle.type = 'square';
-  rattle.frequency.setValueAtTime(180, ac.currentTime);
-  rattleGain.gain.value = 0.25;
-  rattle.connect(rattleGain);
-  rattleGain.connect(master);
-  rattle.start();
+  // 2. Low motor hum — sawtooth through lowpass
+  const motor    = ac.createOscillator();
+  motor.type     = 'sawtooth';
+  motor.frequency.value = 48;
+  const lpf      = ac.createBiquadFilter();
+  lpf.type       = 'lowpass';
+  lpf.frequency.value = 180;
+  const motorGain = ac.createGain();
+  motorGain.gain.value = 0.28;
+  motor.connect(lpf);
+  lpf.connect(motorGain);
+  motorGain.connect(master);
+  motor.start();
 
-  // Layer 3: high-freq ticker (simulates symbol click-past)
-  const ticker = ac.createOscillator();
-  const tickerGain = ac.createGain();
-  ticker.type = 'square';
-  ticker.frequency.setValueAtTime(420, ac.currentTime);
-  // Modulate ticker frequency to create rhythmic clicking
-  const lfo = ac.createOscillator();
-  const lfoGain = ac.createGain();
-  lfo.frequency.value = 14; // ~14 clicks/sec matches visible symbol scroll
-  lfoGain.gain.value = 180;
+  // 3. Rhythmic reel tick — amplitude-modulated square wave
+  //    LFO at ~9 Hz chops the signal → distinct tick-tick-tick
+  const ticker   = ac.createOscillator();
+  ticker.type    = 'square';
+  ticker.frequency.value = 260;
+  const tickGain = ac.createGain();
+  tickGain.gain.value = 0;
+  const lfo      = ac.createOscillator();
+  lfo.type       = 'sine';
+  lfo.frequency.value = 9;          // 9 ticks/sec
+  const lfoGain  = ac.createGain();
+  lfoGain.gain.value = 0.18;
   lfo.connect(lfoGain);
-  lfoGain.connect(ticker.frequency);
+  lfoGain.connect(tickGain.gain);   // LFO modulates tick volume
+  ticker.connect(tickGain);
+  tickGain.connect(master);
   lfo.start();
-  tickerGain.gain.value = 0.15;
-  ticker.connect(tickerGain);
-  tickerGain.connect(master);
   ticker.start();
 
-  spinLoopNodes = { master, hum, rattle, ticker, lfo };
+  // 4. High-freq shimmer — adds brightness/energy
+  const shimmer  = ac.createOscillator();
+  shimmer.type   = 'sine';
+  shimmer.frequency.value = 1800;
+  const shimGain = ac.createGain();
+  shimGain.gain.value = 0.04;
+  shimmer.connect(shimGain);
+  shimGain.connect(master);
+  shimmer.start();
+
+  spinLoopNodes = { master, noise, motor, ticker, lfo, shimmer };
 };
 
 const stopSpinSound = () => {
   if (!spinLoopNodes || !audioContext) return;
   const ac = audioContext;
-  const { master, hum, rattle, ticker, lfo } = spinLoopNodes;
-  master.gain.setValueAtTime(master.gain.value, ac.currentTime);
-  master.gain.linearRampToValueAtTime(0, ac.currentTime + 0.12); // quick fade out
+  const { master, noise, motor, ticker, lfo, shimmer } = spinLoopNodes;
+  const t = ac.currentTime;
+  master.gain.setValueAtTime(master.gain.value, t);
+  master.gain.linearRampToValueAtTime(0, t + 0.18);
   setTimeout(() => {
-    try { hum.stop(); rattle.stop(); ticker.stop(); lfo.stop(); } catch(e) {}
+    try { noise.stop(); motor.stop(); ticker.stop(); lfo.stop(); shimmer.stop(); } catch(e) {}
     spinLoopNodes = null;
-  }, 150);
+  }, 220);
 };
 
-// Sharp mechanical CLACK when a reel locks in
+// ── REEL STOP: percussive mechanical clack ───────────────────────────────────
 const playReelStopSound = () => {
   const ac = getAC();
-  const t = ac.currentTime;
+  const t  = ac.currentTime;
 
-  // Thud: low-freq punch
-  const thud = ac.createOscillator();
+  // Layer 1: deep thud — sine sweep 200→55 Hz (the physical mass hitting)
+  const thud     = ac.createOscillator();
   const thudGain = ac.createGain();
-  thud.type = 'sine';
-  thud.frequency.setValueAtTime(160, t);
-  thud.frequency.exponentialRampToValueAtTime(60, t + 0.06);
-  thudGain.gain.setValueAtTime(0.5, t);
-  thudGain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-  thud.connect(thudGain);
-  thudGain.connect(ac.destination);
-  thud.start(t); thud.stop(t + 0.12);
+  thud.type      = 'sine';
+  thud.frequency.setValueAtTime(200, t);
+  thud.frequency.exponentialRampToValueAtTime(55, t + 0.08);
+  thudGain.gain.setValueAtTime(0.55, t);
+  thudGain.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+  thud.connect(thudGain); thudGain.connect(ac.destination);
+  thud.start(t); thud.stop(t + 0.14);
 
-  // Click: high transient snap
-  const click = ac.createOscillator();
-  const clickGain = ac.createGain();
-  click.type = 'square';
-  click.frequency.setValueAtTime(900, t);
-  click.frequency.exponentialRampToValueAtTime(200, t + 0.04);
-  clickGain.gain.setValueAtTime(0.3, t);
-  clickGain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
-  click.connect(clickGain);
-  clickGain.connect(ac.destination);
-  click.start(t); click.stop(t + 0.05);
+  // Layer 2: metallic snap — noise burst through highpass
+  const snapBuf  = makeNoiseBuffer(ac);
+  const snap     = ac.createBufferSource();
+  snap.buffer    = snapBuf;
+  const hpf      = ac.createBiquadFilter();
+  hpf.type       = 'highpass';
+  hpf.frequency.value = 2200;
+  const snapGain = ac.createGain();
+  snapGain.gain.setValueAtTime(0.4, t);
+  snapGain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+  snap.connect(hpf); hpf.connect(snapGain); snapGain.connect(ac.destination);
+  snap.start(t); snap.stop(t + 0.06);
+
+  // Layer 3: spring resonance — decaying sine at mid freq
+  const spring     = ac.createOscillator();
+  const springGain = ac.createGain();
+  spring.type      = 'sine';
+  spring.frequency.setValueAtTime(420, t);
+  spring.frequency.exponentialRampToValueAtTime(280, t + 0.12);
+  springGain.gain.setValueAtTime(0.18, t);
+  springGain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+  spring.connect(springGain); springGain.connect(ac.destination);
+  spring.start(t); spring.stop(t + 0.18);
 };
 
-// Coin jingle win — ascending chime + coin clink layer
+// ── WIN: coin cascade + bell melody ─────────────────────────────────────────
 const playWinSound = () => {
   const ac = getAC();
-  // Ascending chime: C5 E5 G5 C6
-  [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
-    const t = ac.currentTime + i * 0.11;
-    const osc = ac.createOscillator();
-    const gain = ac.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, t);
-    gain.gain.setValueAtTime(0.28, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
-    osc.connect(gain); gain.connect(ac.destination);
-    osc.start(t); osc.stop(t + 0.35);
+  const t0 = ac.currentTime;
 
-    // Coin clink on each note
-    const clink = ac.createOscillator();
-    const clinkGain = ac.createGain();
-    clink.type = 'triangle';
-    clink.frequency.setValueAtTime(freq * 2.5, t);
-    clinkGain.gain.setValueAtTime(0.12, t);
-    clinkGain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-    clink.connect(clinkGain); clinkGain.connect(ac.destination);
-    clink.start(t); clink.stop(t + 0.15);
+  // Coin cascade — rapid noise bursts mimicking coins dropping
+  for (let i = 0; i < 8; i++) {
+    const ct = t0 + i * 0.055;
+    const coinBuf = makeNoiseBuffer(ac);
+    const coin    = ac.createBufferSource();
+    coin.buffer   = coinBuf;
+    const bpf     = ac.createBiquadFilter();
+    bpf.type      = 'bandpass';
+    bpf.frequency.value = 2800 + Math.random() * 800;
+    bpf.Q.value   = 12;
+    const cGain   = ac.createGain();
+    cGain.gain.setValueAtTime(0.22, ct);
+    cGain.gain.exponentialRampToValueAtTime(0.001, ct + 0.07);
+    coin.connect(bpf); bpf.connect(cGain); cGain.connect(ac.destination);
+    coin.start(ct); coin.stop(ct + 0.07);
+  }
+
+  // Bell melody — C5 E5 G5 C6 (major chord arpeggio)
+  const melody = [523.25, 659.25, 783.99, 1046.50];
+  melody.forEach((freq, i) => {
+    const t = t0 + 0.12 + i * 0.13;
+    // Bell body: sine with fast attack, slow decay
+    const bell     = ac.createOscillator();
+    const bellGain = ac.createGain();
+    bell.type      = 'sine';
+    bell.frequency.value = freq;
+    bellGain.gain.setValueAtTime(0, t);
+    bellGain.gain.linearRampToValueAtTime(0.3, t + 0.01);  // sharp attack
+    bellGain.gain.exponentialRampToValueAtTime(0.001, t + 0.5); // long decay
+    bell.connect(bellGain); bellGain.connect(ac.destination);
+    bell.start(t); bell.stop(t + 0.5);
+
+    // Bell overtone: triangle at 2x freq
+    const ot     = ac.createOscillator();
+    const otGain = ac.createGain();
+    ot.type      = 'triangle';
+    ot.frequency.value = freq * 2.756; // inharmonic partial = bell character
+    otGain.gain.setValueAtTime(0.08, t);
+    otGain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+    ot.connect(otGain); otGain.connect(ac.destination);
+    ot.start(t); ot.stop(t + 0.25);
   });
 };
 
-// Big win fanfare — full ascending arpeggio + shimmer
+// ── JACKPOT: full fanfare + coin shower + shimmer tail ───────────────────────
 const playJackpotSound = () => {
   const ac = getAC();
-  const fanfare = [261.63, 329.63, 392, 523.25, 659.25, 783.99, 1046.50, 1318.51];
-  fanfare.forEach((freq, i) => {
-    const t = ac.currentTime + i * 0.09;
+  const t0 = ac.currentTime;
+
+  // Coin shower — dense cascade for 1.2 sec
+  for (let i = 0; i < 24; i++) {
+    const ct = t0 + i * 0.05;
+    const coinBuf = makeNoiseBuffer(ac);
+    const coin    = ac.createBufferSource();
+    coin.buffer   = coinBuf;
+    const bpf     = ac.createBiquadFilter();
+    bpf.type      = 'bandpass';
+    bpf.frequency.value = 2400 + Math.random() * 1200;
+    bpf.Q.value   = 14;
+    const cGain   = ac.createGain();
+    cGain.gain.setValueAtTime(0.18, ct);
+    cGain.gain.exponentialRampToValueAtTime(0.001, ct + 0.08);
+    coin.connect(bpf); bpf.connect(cGain); cGain.connect(ac.destination);
+    coin.start(ct); coin.stop(ct + 0.08);
+  }
+
+  // Brass fanfare — two-octave ascending arpeggio
+  const fanfare = [
+    [261.63, 'sawtooth', 0.18],  // C4
+    [329.63, 'sawtooth', 0.18],  // E4
+    [392.00, 'sawtooth', 0.18],  // G4
+    [523.25, 'square',   0.14],  // C5
+    [659.25, 'square',   0.14],  // E5
+    [783.99, 'sine',     0.16],  // G5
+    [1046.5, 'sine',     0.18],  // C6
+    [1318.5, 'sine',     0.20],  // E6
+  ];
+  fanfare.forEach(([freq, type, vol], i) => {
+    const t   = t0 + i * 0.1;
     const osc = ac.createOscillator();
-    const gain = ac.createGain();
-    osc.type = i < 4 ? 'triangle' : 'sine';
-    osc.frequency.setValueAtTime(freq, t);
-    gain.gain.setValueAtTime(0.22, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
-    osc.connect(gain); gain.connect(ac.destination);
-    osc.start(t); osc.stop(t + 0.4);
+    const g   = ac.createGain();
+    osc.type  = type;
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+    osc.connect(g); g.connect(ac.destination);
+    osc.start(t); osc.stop(t + 0.45);
   });
-  // Shimmer layer on top
-  for (let i = 0; i < 6; i++) {
-    const t = ac.currentTime + 0.5 + i * 0.07;
+
+  // Shimmer tail — high sine cluster after fanfare
+  for (let i = 0; i < 8; i++) {
+    const t   = t0 + 0.9 + i * 0.06;
     const osc = ac.createOscillator();
-    const gain = ac.createGain();
-    osc.type = 'sine';
-    osc.frequency.value = 1200 + i * 180;
-    gain.gain.setValueAtTime(0.1, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-    osc.connect(gain); gain.connect(ac.destination);
-    osc.start(t); osc.stop(t + 0.2);
+    const g   = ac.createGain();
+    osc.type  = 'sine';
+    osc.frequency.value = 1400 + i * 220;
+    g.gain.setValueAtTime(0.1, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+    osc.connect(g); g.connect(ac.destination);
+    osc.start(t); osc.stop(t + 0.3);
   }
 };
 
