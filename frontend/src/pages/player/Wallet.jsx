@@ -439,8 +439,25 @@ export default function Wallet() {
                   ))}
                 </div>
               </div>
+
+              {/* Warning notice */}
+              <div style={{
+                background: 'rgba(255,71,87,0.1)',
+                border: '1px solid rgba(255,71,87,0.4)',
+                borderRadius: '10px',
+                padding: '12px 14px',
+                marginBottom: '14px',
+              }}>
+                <p style={{ fontSize: '12px', color: '#ff4757', margin: 0, lineHeight: 1.6, fontWeight: '600' }}>
+                  ⚠️ <strong>IMPORTANT:</strong> Please enter your {withdrawForm.bank_code === 'MAYA' ? 'Maya' : withdrawForm.bank_code === 'GCASH' ? 'GCash' : 'GCash / Maya'} registered <strong>phone number</strong> correctly.
+                </p>
+                <p style={{ fontSize: '12px', color: '#ff6b6b', margin: '6px 0 0', lineHeight: 1.6 }}>
+                  🚫 If you send to the <strong>wrong number</strong>, the money <strong>cannot be recovered</strong>. Double-check before submitting!
+                </p>
+              </div>
+
               <div className="input-group">
-                <label>Account Number</label>
+                <label>{withdrawForm.bank_code ? `${withdrawForm.bank_code === 'GCASH' ? 'GCash' : 'Maya'} Phone Number` : 'Account Number'}</label>
                 <input
                   type="tel"
                   inputMode="numeric"
@@ -448,7 +465,7 @@ export default function Wallet() {
                   value={withdrawForm.account_number}
                   onChange={(e) => setWithdrawForm({ ...withdrawForm, account_number: e.target.value.replace(/\D/g, '') })}
                   required
-                  placeholder="Numbers only"
+                  placeholder={withdrawForm.bank_code === 'GCASH' ? 'GCash phone number (e.g. 09XXXXXXXXX)' : withdrawForm.bank_code === 'MAYA' ? 'Maya phone number (e.g. 09XXXXXXXXX)' : 'Phone number (09XXXXXXXXX)'}
                 />
               </div>
               <div className="input-group">
