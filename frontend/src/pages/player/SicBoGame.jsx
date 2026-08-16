@@ -1,6 +1,124 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { gameAPI, walletAPI } from '../../services/api';
+
+// ── Sic Bo Audio Engine ───────────────────────────────────────────────────────
+function useSicBoSounds() {
+  const ctx = useRef(null);
+  const shakeLoop = useRef(null);
+
+  const getCtx = () => {
+    if (!ctx.current) ctx.current = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.current.state === 'suspended') ctx.current.resume();
+    return ctx.current;
+  };
+
+  const makeNoise = (ac, duration) => {
+    const buf = ac.createBuffer(1, ac.sampleRate * duration, ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    return buf;
+  };
+
+  // Dice rattling inside cup — filtered noise bursts
+  const startShake = useCallback(() => {
+    const ac = getCtx();
+    let running = true;
+    let timeout;
+    const burst = () => {
+      if (!running) return;
+      const src = ac.createBufferSource();
+      src.buffer = makeNoise(ac, 0.06);
+      const bp = ac.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = 1800 + Math.random() * 800;
+      bp.Q.value = 0.8;
+      const gain = ac.createGain();
+      gain.gain.setValueAtTime(0.18, ac.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.06);
+      src.connect(bp); bp.connect(gain); gain.connect(ac.destination);
+      src.start();
+      timeout = setTimeout(burst, 80 + Math.random() * 60);
+    };
+    burst();
+    shakeLoop.current = { stop: () => { running = false; clearTimeout(timeout); } };
+  }, []);
+
+  const stopShake = useCallback(() => {
+    shakeLoop.current?.stop();
+    shakeLoop.current = null;
+  }, []);
+
+  // Hard clack when a single die lands
+  const playDiceClack = useCallback((delayMs = 0) => {
+    const ac = getCtx();
+    const t = ac.currentTime + delayMs / 1000;
+    // Noise thud
+    const src = ac.createBufferSource();
+    src.buffer = makeNoise(ac, 0.05);
+    const hp = ac.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 2500;
+    const gain = ac.createGain();
+    gain.gain.setValueAtTime(0.5, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+    src.connect(hp); hp.connect(gain); gain.connect(ac.destination);
+    src.start(t);
+    // Tonal click
+    const osc = ac.createOscillator();
+    osc.type = 'sine'; osc.frequency.value = 900;
+    const og = ac.createGain();
+    og.gain.setValueAtTime(0.3, t);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+    osc.connect(og); og.connect(ac.destination);
+    osc.start(t); osc.stop(t + 0.04);
+  }, []);
+
+  // Coin cascade for wins
+  const playWin = useCallback((big = false) => {
+    const ac = getCtx();
+    const count = big ? 10 : 5;
+    for (let i = 0; i < count; i++) {
+      const t = ac.currentTime + i * (big ? 0.07 : 0.1);
+      const freq = 900 + Math.random() * 600;
+      const osc = ac.createOscillator();
+      osc.type = 'sine'; osc.frequency.value = freq;
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(big ? 0.35 : 0.25, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+      osc.connect(g); g.connect(ac.destination);
+      osc.start(t); osc.stop(t + 0.18);
+    }
+    if (big) {
+      // Brass fanfare
+      [[0, 440], [0.15, 554], [0.3, 659], [0.45, 880]].forEach(([dt, freq]) => {
+        const t = ac.currentTime + dt;
+        const osc = ac.createOscillator();
+        osc.type = 'sawtooth'; osc.frequency.value = freq;
+        const g = ac.createGain();
+        g.gain.setValueAtTime(0.18, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+        osc.connect(g); g.connect(ac.destination);
+        osc.start(t); osc.stop(t + 0.25);
+      });
+    }
+  }, []);
+
+  // Lose thud
+  const playLose = useCallback(() => {
+    const ac = getCtx();
+    const osc = ac.createOscillator();
+    osc.type = 'sine'; osc.frequency.value = 180;
+    osc.frequency.linearRampToValueAtTime(80, ac.currentTime + 0.3);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.25, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.3);
+    osc.connect(g); g.connect(ac.destination);
+    osc.start(); osc.stop(ac.currentTime + 0.3);
+  }, []);
+
+  return { startShake, stopShake, playDiceClack, playWin, playLose };
+}
 
 // Dice Face Component
 const DiceFace = ({ value, rolling, delay }) => {
@@ -104,6 +222,7 @@ export default function SicBoGame() {
   const [lastWin, setLastWin] = useState(0);
   const [message, setMessage] = useState('');
   const [history, setHistory] = useState([]);
+  const { startShake, stopShake, playDiceClack, playWin, playLose } = useSicBoSounds();
 
   // Calculate total bet
   const totalBet = Object.values(bets).reduce((sum, val) => sum + val, 0);
@@ -129,8 +248,8 @@ export default function SicBoGame() {
     setRolling(true);
     setMessage('');
     setLastWin(0);
+    startShake();
 
-    // Animate dice rolling while waiting for server
     const rollInterval = setInterval(() => {
       setDice([
         Math.floor(Math.random() * 6) + 1,
@@ -140,17 +259,21 @@ export default function SicBoGame() {
     }, 100);
 
     try {
-      // Server-authoritative dice + payout (respects admin win_rate / force_outcome)
       const { data } = await gameAPI.play(game.id, { betAmount: totalBet, bets });
 
       await new Promise(r => setTimeout(r, 1500));
       clearInterval(rollInterval);
+      stopShake();
 
       const finalDice = Array.isArray(data.dice) && data.dice.length === 3
-        ? data.dice
-        : [1, 2, 3];
+        ? data.dice : [1, 2, 3];
       const total = data.total ?? finalDice.reduce((a, b) => a + b, 0);
       const winnings = data.totalWin || 0;
+
+      // Staggered clack for each die landing
+      playDiceClack(0);
+      playDiceClack(120);
+      playDiceClack(240);
 
       setDice(finalDice);
       setBalance(data.balance);
@@ -158,12 +281,15 @@ export default function SicBoGame() {
       setHistory(prev => [{ dice: finalDice, total, time: new Date() }, ...prev.slice(0, 9)]);
 
       if (winnings > 0) {
+        setTimeout(() => playWin(winnings >= totalBet * 5), 300);
         setMessage(`🎉 You won ₱${winnings.toLocaleString()}!`);
       } else {
+        setTimeout(() => playLose(), 300);
         setMessage('😔 No win this round');
       }
     } catch (err) {
       clearInterval(rollInterval);
+      stopShake();
       setMessage(err.response?.data?.error || 'Roll failed');
     }
 
