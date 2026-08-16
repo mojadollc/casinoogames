@@ -399,10 +399,27 @@ export default function GamePlay() {
     setWinningSymbols([]);
     setJackpotWon(false);
     setBigWin(false);
+    // Start all reels spinning immediately
+    setSpinProgress({ 0: true, 1: true, 2: true, 3: true, 4: true });
+    playSpinSound();
 
     try {
       const { data } = await gameAPI.spin(game.id, bet);
-      await animateReels(data.grid);
+      // Stop reels sequentially after API responds
+      const BASE = 0;
+      const STAGGER = 200;
+      for (let i = 0; i < 5; i++) {
+        await new Promise(r => setTimeout(r, i === 0 ? BASE : STAGGER));
+        playReelStopSound();
+        setSpinProgress(prev => ({ ...prev, [i]: false }));
+        setDisplayGrid(prev => {
+          const next = prev ? [...prev] : [];
+          next[i] = data.grid[i];
+          return next;
+        });
+      }
+      await new Promise(r => setTimeout(r, 400));
+      setDisplayGrid(data.grid);
       setBalance(data.balance);
       setLastWin(data.totalWin);
 
@@ -930,87 +947,122 @@ export default function GamePlay() {
   );
 }
 
-// ThemedReel — renders emoji symbols based on game theme
+// ThemedReel — real spinning animation via setInterval
 function ThemedReel({ finalSymbols, spinning, cellSize = 58, gap = 6, winningRows = [], accent = '#FFD700', gameSlug }) {
-  const [phase, setPhase] = useState('idle');
-  const [strip, setStrip] = useState(() =>
-    (finalSymbols && finalSymbols.length >= 3) ? finalSymbols.slice(0, 3) : randomThemedSymbols(gameSlug)
-  );
-  const [displayOffset, setDisplayOffset] = useState(0);
+  const CELL = cellSize + gap;
+  const VIEW_H = cellSize * 3 + gap * 2;
+  const wrapRef = useRef(null);
+  const stripRef = useRef(null);
+  const intervalRef = useRef(null);
+  const posRef = useRef(0);
+  const speedRef = useRef(0);
   const prevSpinning = useRef(false);
+  const [displaySyms, setDisplaySyms] = useState(() =>
+    finalSymbols?.slice(0,3).map(s => (s&&s.id)||s||'cherry') ?? randomThemedSymbols(gameSlug)
+  );
+  const [isMoving, setIsMoving] = useState(false);
 
-  // Themed symbol renderer
-  const renderThemedSymbol = (symbolId, isWinning, idx) => {
-    const themed = getThemedSymbol(gameSlug, symbolId);
-    const color = SYMBOL_COLORS[symbolId] || '#FFD700';
-    return (
-      <div
-        key={`${symbolId}-${idx}`}
-        style={{
-          width: cellSize,
-          height: cellSize,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: cellSize * 0.6,
-          borderRadius: 12,
-          background: isWinning
-            ? `linear-gradient(145deg, ${color}30, ${color}15)`
-            : 'linear-gradient(145deg, rgba(26, 10, 46, 0.9), rgba(13, 5, 21, 0.9))',
-          border: isWinning ? `2px solid ${color}` : '2px solid rgba(255, 215, 0, 0.2)',
-          boxShadow: isWinning ? `0 0 20px ${color}, inset 0 0 10px ${color}20` : '0 2px 8px rgba(0, 0, 0, 0.5)',
-          transition: 'all 0.3s ease',
-          animation: isWinning ? 'themedWinPulse 0.4s ease infinite' : 'none',
-          transform: isWinning ? 'scale(1.08)' : 'scale(1)',
-        }}
-      >
-        {themed.icon}
-      </div>
-    );
-  };
+  function buildStrip(syms) {
+    const el = stripRef.current;
+    if (!el) return;
+    el.innerHTML = '';
+    syms.forEach(id => {
+      const themed = getThemedSymbol(gameSlug, id);
+      const cell = document.createElement('div');
+      cell.style.cssText = `width:${cellSize}px;height:${cellSize}px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:${Math.round(cellSize*0.6)}px;border-radius:12px;background:linear-gradient(145deg,rgba(26,10,46,0.9),rgba(13,5,21,0.9));border:2px solid rgba(255,215,0,0.2);box-shadow:0 2px 8px rgba(0,0,0,0.5);user-select:none;`;
+      cell.textContent = themed.icon;
+      el.appendChild(cell);
+    });
+  }
 
-  // Handle spin start/stop
   useEffect(() => {
-    if (spinning && !prevSpinning.current) {
-      setPhase('spinning');
-    }
-    if (!spinning && prevSpinning.current && finalSymbols) {
-      setPhase('stopping');
-      const finals = finalSymbols.slice(0, 3).map(s => (s && s.id) || s || 'cherry');
-      setStrip(finals);
-      setTimeout(() => setPhase('stopped'), 400);
-    }
+    const wasSpinning = prevSpinning.current;
     prevSpinning.current = spinning;
-  }, [spinning, finalSymbols]);
 
-  // Update display when stopped
-  useEffect(() => {
-    if (phase === 'stopped' && finalSymbols && finalSymbols.length >= 3) {
-      setStrip(finalSymbols.slice(0, 3).map(s => (s && s.id) || s || 'cherry'));
+    if (spinning && !wasSpinning) {
+      // START
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      posRef.current = 0;
+      speedRef.current = 0;
+      const syms = Array.from({length:20}, () => randomThemedSymbols(gameSlug)[0]);
+      buildStrip(syms);
+      setIsMoving(true);
+      if (wrapRef.current) {
+        wrapRef.current.style.borderColor = accent;
+        wrapRef.current.style.boxShadow = `inset 0 0 20px ${accent}55,0 0 12px ${accent}44`;
+      }
+      const TARGET = CELL * 0.6;
+      const STRIP_PX = 20 * CELL;
+      intervalRef.current = setInterval(() => {
+        if (speedRef.current < TARGET) speedRef.current = Math.min(TARGET, speedRef.current + TARGET * 0.1);
+        posRef.current += speedRef.current;
+        if (posRef.current >= STRIP_PX - VIEW_H) {
+          posRef.current = 0;
+          buildStrip(Array.from({length:20}, () => randomThemedSymbols(gameSlug)[0]));
+        }
+        if (stripRef.current) {
+          stripRef.current.style.transform = `translateY(-${posRef.current.toFixed(1)}px)`;
+          stripRef.current.style.filter = `blur(${((speedRef.current/TARGET)*2).toFixed(1)}px)`;
+        }
+      }, 16);
     }
-  }, [finalSymbols, phase]);
 
-  const symbols = Array.isArray(strip) && strip.length >= 3 ? strip : randomThemedSymbols(gameSlug);
+    if (!spinning && wasSpinning) {
+      // STOP
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+      const finals = finalSymbols?.slice(0,3).map(s=>(s&&s.id)||s||'cherry') ?? randomThemedSymbols(gameSlug);
+      setDisplaySyms(finals);
+      setIsMoving(false);
+      if (wrapRef.current) {
+        wrapRef.current.style.borderColor = 'rgba(255,215,0,0.2)';
+        wrapRef.current.style.boxShadow = 'inset 0 0 10px rgba(0,0,0,0.6)';
+      }
+    }
+  }, [spinning]); // eslint-disable-line
+
+  useEffect(() => () => clearInterval(intervalRef.current), []);
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap,
-        padding: '4px',
-        background: 'linear-gradient(180deg, rgba(0,0,0,0.6), rgba(15,15,30,0.4), rgba(0,0,0,0.6))',
-        borderRadius: 14,
-        border: `1px solid ${spinning ? accent + 'aa' : 'rgba(255,215,0,0.2)'}`,
-        boxShadow: spinning ? `inset 0 0 16px ${accent}44, 0 0 10px ${accent}30` : 'inset 0 0 10px rgba(0,0,0,0.6)',
-        transition: 'border 0.2s, box-shadow 0.2s',
-      }}
-    >
-      {symbols.map((symId, ri) => {
-        const symbolId = typeof symId === 'object' ? symId.id : symId;
-        const isWinning = winningRows.includes(ri) && phase !== 'spinning';
-        return renderThemedSymbol(symbolId, isWinning, ri);
-      })}
+    <div ref={wrapRef} style={{
+      width: cellSize + 8,
+      height: VIEW_H,
+      overflow: 'hidden',
+      borderRadius: 14,
+      position: 'relative',
+      flexShrink: 0,
+      background: 'linear-gradient(180deg,rgba(0,0,0,0.6),rgba(15,15,30,0.4),rgba(0,0,0,0.6))',
+      border: '1px solid rgba(255,215,0,0.2)',
+      boxShadow: 'inset 0 0 10px rgba(0,0,0,0.6)',
+      transition: 'border-color 0.15s, box-shadow 0.15s',
+    }}>
+      <div style={{position:'absolute',top:0,left:0,right:0,height:16,zIndex:3,background:'linear-gradient(180deg,rgba(0,0,0,0.9),transparent)',pointerEvents:'none'}} />
+      <div style={{position:'absolute',bottom:0,left:0,right:0,height:16,zIndex:3,background:'linear-gradient(0deg,rgba(0,0,0,0.9),transparent)',pointerEvents:'none'}} />
+      {isMoving && (
+        <div ref={stripRef} style={{display:'flex',flexDirection:'column',gap,paddingTop:gap/2,willChange:'transform'}} />
+      )}
+      {!isMoving && (
+        <div style={{display:'flex',flexDirection:'column',gap,paddingTop:gap/2}}>
+          {displaySyms.map((symId, ri) => {
+            const themed = getThemedSymbol(gameSlug, symId);
+            const color = SYMBOL_COLORS[symId] || '#FFD700';
+            const isWinning = winningRows.includes(ri);
+            return (
+              <div key={ri} style={{
+                width:cellSize,height:cellSize,flexShrink:0,
+                display:'flex',alignItems:'center',justifyContent:'center',
+                fontSize:Math.round(cellSize*0.6),borderRadius:12,
+                background:isWinning?`linear-gradient(145deg,${color}30,${color}15)`:'linear-gradient(145deg,rgba(26,10,46,0.9),rgba(13,5,21,0.9))',
+                border:isWinning?`2px solid ${color}`:'2px solid rgba(255,215,0,0.2)',
+                boxShadow:isWinning?`0 0 20px ${color},inset 0 0 10px ${color}20`:'0 2px 8px rgba(0,0,0,0.5)',
+                animation:isWinning?'themedWinPulse 0.4s ease infinite':'none',
+                transform:isWinning?'scale(1.08)':'scale(1)',
+                transition:'all 0.3s',
+              }}>{themed.icon}</div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
