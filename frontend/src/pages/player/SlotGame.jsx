@@ -2,11 +2,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { gameAPI, walletAPI } from '../../services/api';
-import SlotSymbol, { AnimatedReel, REEL_STOP_DELAYS } from '../../components/slots/SlotSymbols';
+import { AnimatedReel } from '../../components/slots/SlotSymbols';
 import useSlotSounds from '../../components/slots/useSlotSounds';
 import useParticles from '../../components/slots/useParticles';
 import BigWinOverlay from '../../components/slots/BigWinOverlay';
 import WinCounter from '../../components/slots/WinCounter';
+
+const REEL_STOP_DELAYS = [0, 150, 320, 520, 750]; // ms
 
 // Game-specific themed symbol sets
 const GAME_THEMES = {
@@ -239,6 +241,8 @@ export default function SlotGame() {
   const spinBtnRef = useRef(null);
   const particleCanvasRef = useRef(null);
   const reelsContainerRef = useRef(null);
+  // Imperative refs for each AnimatedReel
+  const reelRefs = useRef([null, null, null, null, null]);
   const sounds = useSlotSounds();
   const { triggerCoinBurst, triggerBigWinBurst } = useParticles(particleCanvasRef);
 
@@ -270,38 +274,35 @@ export default function SlotGame() {
     }
   }, [autoSpin, spinning, balance, bet]);
 
-  // spinReels: triggers spin and returns a Promise that resolves when all 5 reels stop
-  const spinResolveRef = useRef(null);
-  const stoppedCountRef = useRef(0);
-
-  const spinReels = (finalReels) => {
+  // Imperative spin: start all reels, then schedule sequential stops
+  const spinReels = useCallback((finalReels) => {
     return new Promise((resolve) => {
-      // Reset state synchronously before triggering spin
       setWinningLines([]);
       setLastWin(0);
       setMessage('');
       setBigWinAmount(0);
-      setReels(finalReels);
-      stoppedCountRef.current = 0;
-      spinResolveRef.current = resolve;
-      // Small delay so React flushes state before AnimatedReel sees spinning=true
-      setTimeout(() => {
-        setSpinning(true);
-        sounds.play('whoosh');
-      }, 16);
-    });
-  };
+      setSpinning(true);
+      sounds.play('whoosh');
 
-  // Called by each AnimatedReel's onStop — fires clack, resolves promise when all 5 done
-  const handleReelStop = useCallback(() => {
-    sounds.play('clack');
-    stoppedCountRef.current += 1;
-    if (stoppedCountRef.current >= 5) {
-      stoppedCountRef.current = 0;
-      setSpinning(false);
-      spinResolveRef.current?.();
-      spinResolveRef.current = null;
-    }
+      // Start all 5 reels immediately
+      reelRefs.current.forEach(r => r?.startSpin());
+
+      let stopped = 0;
+      // Schedule each reel to stop with its delay
+      reelRefs.current.forEach((r, i) => {
+        setTimeout(() => {
+          r?.stopSpin(finalReels[i], () => {
+            sounds.play('clack');
+            stopped++;
+            if (stopped >= 5) {
+              setSpinning(false);
+              setReels(finalReels);
+              resolve();
+            }
+          });
+        }, REEL_STOP_DELAYS[i]);
+      });
+    });
   }, [sounds]);
 
   // Convert backend grid [{id,name}, ...] columns into string-id reels
@@ -317,7 +318,7 @@ export default function SlotGame() {
   };
 
   const spin = async () => {
-    if (spinning || balance < bet) return;
+    if (spinning || balance < bet || !game) return;
 
     try {
       const { data } = await gameAPI.spin(game.id, bet);
@@ -609,28 +610,21 @@ export default function SlotGame() {
               zIndex: 1,
             }}
           >
-            {reels && reels.map((col, ci) => {
-              // Determine which rows are winning for this reel column
+            {[0,1,2,3,4].map((ci) => {
               const winRows = winningLines
-                .filter(line => line && line[ci] !== undefined)
-                .map(line => {
-                  // line is an array of row indices per reel, or a flat payline array
-                  if (Array.isArray(line) && line.length === 5) return line[ci];
-                  return null;
-                })
-                .filter(r => r !== null);
+                .filter(line => Array.isArray(line) && line.length === 5)
+                .map(line => line[ci])
+                .filter(r => r !== null && r !== undefined);
 
               return (
                 <AnimatedReel
                   key={ci}
-                  finalSymbols={col}
-                  spinning={spinning}
+                  ref={el => reelRefs.current[ci] = el}
+                  initialSymbols={reels[ci]}
                   cellSize={58}
                   gap={6}
                   winningRows={winRows}
                   accent='#FFD700'
-                  stopDelay={REEL_STOP_DELAYS[ci]}
-                  onStop={handleReelStop}
                 />
               );
             })}
