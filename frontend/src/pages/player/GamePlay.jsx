@@ -973,32 +973,151 @@ export default function GamePlay() {
   );
 }
 
-// ThemedReel — real spinning animation via setInterval
+// ─── ThemedReel ────────────────────────────────────────────────────────────────
+// requestAnimationFrame physics loop — smooth 60fps, no jitter
+// Phase machine: IDLE → ACCEL → CRUISE → DECEL → BOUNCE → IDLE
 function ThemedReel({ finalSymbols, spinning, cellSize = 58, gap = 6, winningRows = [], accent = '#FFD700', gameSlug }) {
-  const CELL = cellSize + gap;
-  const VIEW_H = cellSize * 3 + gap * 2;
-  const wrapRef = useRef(null);
-  const stripRef = useRef(null);
-  const intervalRef = useRef(null);
-  const posRef = useRef(0);
-  const speedRef = useRef(0);
+  const CELL      = cellSize + gap;          // 64px per symbol slot
+  const VIEW_H    = cellSize * 3 + gap * 2;  // visible window height
+  const STRIP_LEN = 40;                      // symbols in the looping strip
+  const STRIP_PX  = STRIP_LEN * CELL;
+  // Speed constants (px/frame at 60fps)
+  const SPEED_MAX  = CELL * 0.14;  // ~537px/sec — real machine pace
+  const ACCEL_DUR  = 500;          // ms to reach full speed
+  const DECEL_DUR  = 380;          // ms to coast down
+  const BOUNCE_AMT = cellSize * 0.18; // overshoot px on landing
+  const BOUNCE_DUR = 180;          // ms for bounce settle
+
+  const wrapRef    = useRef(null);
+  const canvasRef  = useRef(null); // single <div> we translate
+  const rafRef     = useRef(null);
+  const stateRef   = useRef('IDLE'); // IDLE | ACCEL | CRUISE | DECEL | BOUNCE
+  const posRef     = useRef(0);      // current translateY (px, always positive)
+  const speedRef   = useRef(0);      // current px/frame
+  const phaseRef   = useRef(0);      // ms elapsed in current phase
+  const lastTsRef  = useRef(null);
   const prevSpinning = useRef(false);
+  const symbolsRef = useRef([]);     // current strip symbol ids
+
   const [displaySyms, setDisplaySyms] = useState(() =>
     finalSymbols?.slice(0,3).map(s => (s&&s.id)||s||'cherry') ?? randomThemedSymbols(gameSlug)
   );
   const [isMoving, setIsMoving] = useState(false);
 
+  // Build the DOM strip imperatively — avoids React re-render during animation
   function buildStrip(syms) {
-    const el = stripRef.current;
+    symbolsRef.current = syms;
+    const el = canvasRef.current;
     if (!el) return;
     el.innerHTML = '';
+    el.style.transform = 'translateY(0)';
+    el.style.filter = 'none';
     syms.forEach(id => {
       const themed = getThemedSymbol(gameSlug, id);
       const cell = document.createElement('div');
-      cell.style.cssText = `width:${cellSize}px;height:${cellSize}px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:${Math.round(cellSize*0.6)}px;border-radius:12px;background:linear-gradient(145deg,rgba(26,10,46,0.9),rgba(13,5,21,0.9));border:2px solid rgba(255,215,0,0.2);box-shadow:0 2px 8px rgba(0,0,0,0.5);user-select:none;`;
+      cell.style.cssText = [
+        `width:${cellSize}px`,
+        `height:${cellSize}px`,
+        `flex-shrink:0`,
+        `display:flex`,
+        `align-items:center`,
+        `justify-content:center`,
+        `font-size:${Math.round(cellSize * 0.58)}px`,
+        `border-radius:12px`,
+        `background:linear-gradient(145deg,rgba(30,12,50,0.95),rgba(15,6,28,0.95))`,
+        `border:2px solid rgba(255,215,0,0.18)`,
+        `box-shadow:0 2px 10px rgba(0,0,0,0.6)`,
+        `user-select:none`,
+        `margin-bottom:${gap}px`,
+      ].join(';');
       cell.textContent = themed.icon;
       el.appendChild(cell);
     });
+  }
+
+  function refillStrip() {
+    const fresh = Array.from({length: STRIP_LEN}, () => randomThemedSymbols(gameSlug)[0]);
+    buildStrip(fresh);
+  }
+
+  // ── RAF loop ──────────────────────────────────────────────────────────────
+  function tick(ts) {
+    if (lastTsRef.current === null) lastTsRef.current = ts;
+    const dt = Math.min(ts - lastTsRef.current, 32); // cap at 32ms (handles tab blur)
+    lastTsRef.current = ts;
+    phaseRef.current += dt;
+
+    const phase = stateRef.current;
+    const el    = canvasRef.current;
+    if (!el) { rafRef.current = requestAnimationFrame(tick); return; }
+
+    if (phase === 'ACCEL') {
+      // Cubic ease-in: slow start → full speed
+      const t = Math.min(phaseRef.current / ACCEL_DUR, 1);
+      const eased = t * t * t;                    // cubic ease-in
+      speedRef.current = SPEED_MAX * eased;
+      if (t >= 1) { stateRef.current = 'CRUISE'; phaseRef.current = 0; }
+    }
+
+    if (phase === 'CRUISE') {
+      speedRef.current = SPEED_MAX;
+      // CRUISE stays until spin() signals stop via stateRef = 'DECEL'
+    }
+
+    if (phase === 'DECEL') {
+      // Cubic ease-out: full speed → near zero
+      const t = Math.min(phaseRef.current / DECEL_DUR, 1);
+      const eased = 1 - Math.pow(1 - t, 3);       // cubic ease-out
+      speedRef.current = SPEED_MAX * (1 - eased);
+      if (t >= 1) {
+        speedRef.current = 0;
+        stateRef.current = 'BOUNCE';
+        phaseRef.current = 0;
+        // Snap position to nearest cell boundary for clean landing
+        posRef.current = Math.round(posRef.current / CELL) * CELL;
+      }
+    }
+
+    if (phase === 'BOUNCE') {
+      // Overshoot down then spring back — the satisfying "clunk"
+      const t = Math.min(phaseRef.current / BOUNCE_DUR, 1);
+      // damped sine: goes forward, overshoots, returns
+      const bounce = Math.sin(t * Math.PI) * BOUNCE_AMT * (1 - t);
+      el.style.transform = `translateY(-${(posRef.current - bounce).toFixed(2)}px)`;
+      el.style.filter = 'none';
+      if (t >= 1) {
+        el.style.transform = `translateY(-${posRef.current.toFixed(2)}px)`;
+        stateRef.current = 'IDLE';
+        // Show final symbols
+        const finals = finalSymbols?.slice(0,3).map(s => (s&&s.id)||s||'cherry') ?? randomThemedSymbols(gameSlug);
+        setDisplaySyms(finals);
+        setIsMoving(false);
+        if (wrapRef.current) {
+          wrapRef.current.style.borderColor = 'rgba(255,215,0,0.2)';
+          wrapRef.current.style.boxShadow   = 'inset 0 0 10px rgba(0,0,0,0.6)';
+        }
+        return; // stop RAF
+      }
+      rafRef.current = requestAnimationFrame(tick);
+      return;
+    }
+
+    if (phase === 'IDLE') return;
+
+    // Advance position
+    posRef.current += speedRef.current;
+    // Seamless loop — reset when we've scrolled one full strip
+    if (posRef.current >= STRIP_PX * 0.7) {
+      posRef.current -= STRIP_PX * 0.7;
+      refillStrip();
+    }
+
+    // Motion blur proportional to speed ratio (max 1.8px)
+    const blur = ((speedRef.current / SPEED_MAX) * 1.8).toFixed(2);
+    el.style.transform = `translateY(-${posRef.current.toFixed(2)}px)`;
+    el.style.filter    = blur > 0.1 ? `blur(${blur}px)` : 'none';
+
+    rafRef.current = requestAnimationFrame(tick);
   }
 
   useEffect(() => {
@@ -1006,75 +1125,35 @@ function ThemedReel({ finalSymbols, spinning, cellSize = 58, gap = 6, winningRow
     prevSpinning.current = spinning;
 
     if (spinning && !wasSpinning) {
-      // START
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      posRef.current = 0;
+      // ── START ──
+      cancelAnimationFrame(rafRef.current);
+      posRef.current   = 0;
       speedRef.current = 0;
-      const syms = Array.from({length:30}, () => randomThemedSymbols(gameSlug)[0]);
-      buildStrip(syms);
+      phaseRef.current = 0;
+      lastTsRef.current = null;
+      stateRef.current = 'ACCEL';
+
+      refillStrip();
       setIsMoving(true);
+
       if (wrapRef.current) {
         wrapRef.current.style.borderColor = accent;
-        wrapRef.current.style.boxShadow = `inset 0 0 20px ${accent}55,0 0 12px ${accent}44`;
+        wrapRef.current.style.boxShadow   = `inset 0 0 18px ${accent}44, 0 0 10px ${accent}33`;
       }
-      // Real slot machine: ~600px/sec = 10px/frame at 60fps
-      // CELL=64px → TARGET=0.15*64≈9.6px/frame ≈ 576px/sec
-      const TARGET = CELL * 0.15;
-      // Accelerate over ~500ms (30 frames)
-      const ACCEL = TARGET / 30;
-      const STRIP_PX = 30 * CELL;
-      intervalRef.current = setInterval(() => {
-        if (speedRef.current < TARGET) {
-          speedRef.current = Math.min(TARGET, speedRef.current + ACCEL);
-        }
-        posRef.current += speedRef.current;
-        if (posRef.current >= STRIP_PX - VIEW_H) {
-          posRef.current = 0;
-          buildStrip(Array.from({length:30}, () => randomThemedSymbols(gameSlug)[0]));
-        }
-        if (stripRef.current) {
-          stripRef.current.style.transform = `translateY(-${posRef.current.toFixed(1)}px)`;
-          // blur: 0 at start → 1.5px at full speed (subtle, readable)
-          stripRef.current.style.filter = `blur(${((speedRef.current/TARGET)*1.5).toFixed(1)}px)`;
-        }
-      }, 16);
+      rafRef.current = requestAnimationFrame(tick);
     }
 
     if (!spinning && wasSpinning) {
-      // STOP — ease-out deceleration over ~320ms then snap
-      const stopSpeed = speedRef.current || (CELL * 0.15);
-      const DECEL_FRAMES = 20; // 20 × 16ms = 320ms coast-to-stop
-      let frame = 0;
-      clearInterval(intervalRef.current);
-      intervalRef.current = setInterval(() => {
-        frame++;
-        // Ease-out curve: fast at first, slow at end
-        const t = frame / DECEL_FRAMES;
-        const eased = 1 - (t * t); // quadratic ease-out
-        const currentSpeed = stopSpeed * eased;
-        posRef.current += currentSpeed;
-        const STRIP_PX = 30 * CELL;
-        if (posRef.current >= STRIP_PX - VIEW_H) posRef.current = 0;
-        if (stripRef.current) {
-          stripRef.current.style.transform = `translateY(-${posRef.current.toFixed(1)}px)`;
-          stripRef.current.style.filter = `blur(${(eased * 1.5).toFixed(1)}px)`;
-        }
-        if (frame >= DECEL_FRAMES) {
-          clearInterval(intervalRef.current);
-          intervalRef.current = null;
-          const finals = finalSymbols?.slice(0,3).map(s=>(s&&s.id)||s||'cherry') ?? randomThemedSymbols(gameSlug);
-          setDisplaySyms(finals);
-          setIsMoving(false);
-          if (wrapRef.current) {
-            wrapRef.current.style.borderColor = 'rgba(255,215,0,0.2)';
-            wrapRef.current.style.boxShadow = 'inset 0 0 10px rgba(0,0,0,0.6)';
-          }
-        }
-      }, 16);
+      // ── STOP signal — transition to DECEL from wherever we are ──
+      if (stateRef.current === 'ACCEL' || stateRef.current === 'CRUISE') {
+        stateRef.current = 'DECEL';
+        phaseRef.current = 0;
+      }
+      // If already DECEL/BOUNCE, let it finish naturally
     }
   }, [spinning]); // eslint-disable-line
 
-  useEffect(() => () => clearInterval(intervalRef.current), []);
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
 
   return (
     <div ref={wrapRef} style={{
@@ -1084,34 +1163,53 @@ function ThemedReel({ finalSymbols, spinning, cellSize = 58, gap = 6, winningRow
       borderRadius: 14,
       position: 'relative',
       flexShrink: 0,
-      background: 'linear-gradient(180deg,rgba(0,0,0,0.6),rgba(15,15,30,0.4),rgba(0,0,0,0.6))',
+      background: 'linear-gradient(180deg,rgba(0,0,0,0.55),rgba(14,14,28,0.35),rgba(0,0,0,0.55))',
       border: '1px solid rgba(255,215,0,0.2)',
       boxShadow: 'inset 0 0 10px rgba(0,0,0,0.6)',
-      transition: 'border-color 0.15s, box-shadow 0.15s',
+      transition: 'border-color 0.2s, box-shadow 0.2s',
     }}>
-      <div style={{position:'absolute',top:0,left:0,right:0,height:16,zIndex:3,background:'linear-gradient(180deg,rgba(0,0,0,0.9),transparent)',pointerEvents:'none'}} />
-      <div style={{position:'absolute',bottom:0,left:0,right:0,height:16,zIndex:3,background:'linear-gradient(0deg,rgba(0,0,0,0.9),transparent)',pointerEvents:'none'}} />
-      {isMoving && (
-        <div ref={stripRef} style={{display:'flex',flexDirection:'column',gap,paddingTop:gap/2,willChange:'transform'}} />
-      )}
+      {/* Top/bottom fade masks */}
+      <div style={{position:'absolute',top:0,left:0,right:0,height:20,zIndex:3,
+        background:'linear-gradient(180deg,rgba(0,0,0,0.85),transparent)',pointerEvents:'none'}} />
+      <div style={{position:'absolute',bottom:0,left:0,right:0,height:20,zIndex:3,
+        background:'linear-gradient(0deg,rgba(0,0,0,0.85),transparent)',pointerEvents:'none'}} />
+
+      {/* Spinning strip — always mounted, hidden when idle */}
+      <div
+        ref={canvasRef}
+        style={{
+          display: isMoving ? 'flex' : 'none',
+          flexDirection: 'column',
+          willChange: 'transform',
+          paddingTop: gap / 2,
+        }}
+      />
+
+      {/* Static final symbols — shown when idle */}
       {!isMoving && (
         <div style={{display:'flex',flexDirection:'column',gap,paddingTop:gap/2}}>
           {displaySyms.map((symId, ri) => {
-            const themed = getThemedSymbol(gameSlug, symId);
-            const color = SYMBOL_COLORS[symId] || '#FFD700';
-            const isWinning = winningRows.includes(ri);
+            const themed  = getThemedSymbol(gameSlug, symId);
+            const color   = SYMBOL_COLORS[symId] || '#FFD700';
+            const isWin   = winningRows.includes(ri);
             return (
               <div key={ri} style={{
-                width:cellSize,height:cellSize,flexShrink:0,
-                display:'flex',alignItems:'center',justifyContent:'center',
-                fontSize:Math.round(cellSize*0.6),borderRadius:12,
-                background:isWinning?`linear-gradient(145deg,${color}30,${color}15)`:'linear-gradient(145deg,rgba(26,10,46,0.9),rgba(13,5,21,0.9))',
-                border:isWinning?`2px solid ${color}`:'2px solid rgba(255,215,0,0.2)',
-                boxShadow:isWinning?`0 0 20px ${color},inset 0 0 10px ${color}20`:'0 2px 8px rgba(0,0,0,0.5)',
-                animation:isWinning?'themedWinPulse 0.4s ease infinite':'none',
-                transform:isWinning?'scale(1.08)':'scale(1)',
-                transition:'all 0.3s',
-              }}>{themed.icon}</div>
+                width: cellSize, height: cellSize, flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: Math.round(cellSize * 0.58), borderRadius: 12,
+                background: isWin
+                  ? `linear-gradient(145deg,${color}28,${color}12)`
+                  : 'linear-gradient(145deg,rgba(30,12,50,0.95),rgba(15,6,28,0.95))',
+                border: isWin ? `2px solid ${color}` : '2px solid rgba(255,215,0,0.18)',
+                boxShadow: isWin
+                  ? `0 0 18px ${color}, inset 0 0 8px ${color}22`
+                  : '0 2px 10px rgba(0,0,0,0.6)',
+                animation: isWin ? 'themedWinPulse 0.6s ease-in-out infinite' : 'none',
+                transform: isWin ? 'scale(1.07)' : 'scale(1)',
+                transition: 'all 0.25s ease',
+              }}>
+                {themed.icon}
+              </div>
             );
           })}
         </div>
