@@ -24,6 +24,7 @@ import AdminLayout from './components/admin/AdminLayout';
 
 import BottomNav from './components/shared/BottomNav';
 import Header from './components/shared/Header';
+import { SLOT_GAME_SLUGS } from './data/gameThemes';
 
 // Card games use CardGame component (Blackjack-style gameplay)
 const CARD_GAMES = ['blackjack-vip', 'texas-holdem', 'teen-patti', 'andar-bahar', 'baccarat', 'dragon-tiger', 'speed-baccarat'];
@@ -60,7 +61,11 @@ const GameRouter = () => {
   if (FISHING_GAMES.some(game => lowerSlug.includes(game))) {
     return <FishingGame />;
   }
-  // Slots and all other games (live, table, etc.) use GamePlay
+  // Slot games use SlotGame (PixiJS-powered)
+  if (SLOT_GAME_SLUGS.some(game => lowerSlug.includes(game))) {
+    return <SlotGame />;
+  }
+  // All other games use GamePlay
   return <GamePlay />;
 };
 

@@ -1,295 +1,72 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { gameAPI, walletAPI } from '../../services/api';
 import PixiSlotReels from '../../components/slots/PixiSlotReels';
+import FreeSpinTransition from '../../components/slots/FreeSpinTransition';
+import BigWinOverlay from '../../components/slots/BigWinOverlay';
+import SpinButton from '../../components/slots/SpinButton';
+import BetControls from '../../components/slots/BetControls';
+import useSlotSounds from '../../components/slots/useSlotSounds';
+import useSlotResponsiveHeight from '../../hooks/useSlotResponsiveHeight';
+import { getSymbolsForGame, SLOT_SYMBOL_THEMES, DEFAULT_SLOT_SYMBOLS } from '../../data/gameThemes';
+import DebugOverlay from '../../components/slots/DebugOverlay';
 
-// Game-specific themed symbol sets
-const GAME_THEMES = {
-  'fortune-tiger': {
-    wild:    { icon: '🐅', color: '#ff6b00', value: 100, name: 'Tiger Wild' },
-    scatter: { icon: '🧧', color: '#ff0000', value: 25,  name: 'Lucky Red Envelope' },
-    seven:   { icon: '🐯', color: '#ffd700', value: 75,  name: 'Golden Tiger' },
-    bar:     { icon: '🎪', color: '#ff4757', value: 40,  name: 'Lantern' },
-    bell:    { icon: '🎋', color: '#2ed573', value: 25,  name: 'Bamboo' },
-    cherry:  { icon: '🍊', color: '#ff9f43', value: 18,  name: 'Mandarin' },
-    lemon:   { icon: '🏯', color: '#eccc68', value: 10,  name: 'Temple' },
-    orange:  { icon: '🎎', color: '#ff6b6b', value: 10,  name: 'Daruma' },
-    plum:    { icon: '🪭', color: '#ff4757', value: 7,   name: 'Fan' },
-    grape:   { icon: '🎐', color: '#70a1ff', value: 7,   name: 'Wind Chime' }
-  },
-  'fortune-ox': {
-    wild:    { icon: '🐂', color: '#c41e3a', value: 100, name: 'Ox Wild' },
-    scatter: { icon: '💰', color: '#ffd700', value: 25,  name: 'Gold Ingot' },
-    seven:   { icon: '🐃', color: '#8b4513', value: 75,  name: 'Water Buffalo' },
-    bar:     { icon: '🌾', color: '#daa520', value: 40,  name: 'Rice' },
-    bell:    { icon: '🏔️', color: '#6b8e23', value: 25,  name: 'Mountain' },
-    cherry:  { icon: '🥬', color: '#228b22', value: 18,  name: 'Cabbage' },
-    lemon:   { icon: '🧺', color: '#8b4513', value: 10,  name: 'Basket' },
-    orange:  { icon: '🎋', color: '#228b22', value: 10,  name: 'Bamboo' },
-    plum:    { icon: '🪷', color: '#ff69b4', value: 7,   name: 'Lotus' },
-    grape:   { icon: '☔', color: '#ff6347', value: 7,   name: 'Umbrella' }
-  },
-  'fortune-mouse': {
-    wild:    { icon: '🐭', color: '#ff9999', value: 100, name: 'Mouse Wild' },
-    scatter: { icon: '🧀', color: '#ffd700', value: 25,  name: 'Golden Cheese' },
-    seven:   { icon: '🐀', color: '#4a4a4a', value: 75,  name: 'Rat King' },
-    bar:     { icon: '🍚', color: '#fffacd', value: 40,  name: 'Rice Bowl' },
-    bell:    { icon: '🧧', color: '#ff0000', value: 25,  name: 'Red Packet' },
-    cherry:  { icon: '🥮', color: '#d2691e', value: 18,  name: 'Mooncake' },
-    lemon:   { icon: '🏮', color: '#ff4500', value: 10,  name: 'Lantern' },
-    orange:  { icon: '🧨', color: '#ff0000', value: 10,  name: 'Firecracker' },
-    plum:    { icon: '🎎', color: '#ff1493', value: 7,   name: 'Doll' },
-    grape:   { icon: '🪙', color: '#ffd700', value: 7,   name: 'Coin' }
-  },
-  'gates-of-olympus': {
-    wild:    { icon: '⚔️', color: '#ff0000', value: 100, name: 'Zeus Lightning' },
-    scatter: { icon: '🏛️', color: '#4169e1', value: 25,  name: 'Temple' },
-    seven:   { icon: '👑', color: '#ffd700', value: 75,  name: 'Crown' },
-    bar:     { icon: '🦅', color: '#8b4513', value: 40,  name: 'Eagle' },
-    bell:    { icon: '⚡', color: '#ffd700', value: 25,  name: 'Lightning Bolt' },
-    cherry:  { icon: '🛡️', color: '#c0c0c0', value: 18,  name: 'Shield' },
-    lemon:   { icon: '🏺', color: '#cd853f', value: 10,  name: 'Amphora' },
-    orange:  { icon: '🌊', color: '#00bfff', value: 10,  name: 'Wave' },
-    plum:    { icon: '🦉', color: '#8b4513', value: 7,   name: 'Owl' },
-    grape:   { icon: '🍇', color: '#8b008b', value: 7,   name: 'Grapes' }
-  },
-  'starlight-princess': {
-    wild:    { icon: '👸', color: '#ff69b4', value: 100, name: 'Princess Wild' },
-    scatter: { icon: '⭐', color: '#ffd700', value: 25,  name: 'Star' },
-    seven:   { icon: '👑', color: '#ff1493', value: 75,  name: 'Crown' },
-    bar:     { icon: '💫', color: '#da70d6', value: 40,  name: 'Sparkle' },
-    bell:    { icon: '🌙', color: '#f0e68c', value: 25,  name: 'Moon' },
-    cherry:  { icon: '💎', color: '#e6e6fa', value: 18,  name: 'Diamond' },
-    lemon:   { icon: '🌸', color: '#ffb6c1', value: 10,  name: 'Cherry Blossom' },
-    orange:  { icon: '🎀', color: '#ff69b4', value: 10,  name: 'Ribbon' },
-    plum:    { icon: '💒', color: '#dda0dd', value: 7,   name: 'Castle' },
-    grape:   { icon: '🦄', color: '#e6e6fa', value: 7,   name: 'Unicorn' }
-  },
-  'sweet-bonanza': {
-    wild:    { icon: '🍭', color: '#ff69b4', value: 100, name: 'Lollipop Wild' },
-    scatter: { icon: '🍬', color: '#ff1493', value: 25,  name: 'Candy Scatter' },
-    seven:   { icon: '🎂', color: '#ffdab9', value: 75,  name: 'Cake' },
-    bar:     { icon: '🍩', color: '#d2691e', value: 40,  name: 'Donut' },
-    bell:    { icon: '🧁', color: '#ff69b4', value: 25,  name: 'Cupcake' },
-    cherry:  { icon: '🍪', color: '#daa520', value: 18,  name: 'Cookie' },
-    lemon:   { icon: '🍦', color: '#fffacd', value: 10,  name: 'Ice Cream' },
-    orange:  { icon: '🍫', color: '#8b4513', value: 10,  name: 'Chocolate' },
-    plum:    { icon: '🧃', color: '#ff6347', value: 7,   name: 'Juice Box' },
-    grape:   { icon: '🍇', color: '#8b008b', value: 7,   name: 'Grape' }
-  },
-  'wild-bandito': {
-    wild:    { icon: '🤠', color: '#ffa500', value: 100, name: 'Bandito Wild' },
-    scatter: { icon: '💰', color: '#ffd700', value: 25,  name: 'Money Bag' },
-    seven:   { icon: '🌵', color: '#228b22', value: 75,  name: 'Cactus' },
-    bar:     { icon: '🤠', color: '#8b4513', value: 40,  name: 'Cowboy Hat' },
-    bell:    { icon: '🪣', color: '#daa520', value: 25,  name: 'Gold Pan' },
-    cherry:  { icon: '🦎', color: '#32cd32', value: 18,  name: 'Lizard' },
-    lemon:   { icon: '🐎', color: '#8b4513', value: 10,  name: 'Horse' },
-    orange:  { icon: '🌄', color: '#ff8c00', value: 10,  name: 'Sunset' },
-    plum:    { icon: '🎯', color: '#ff0000', value: 7,   name: 'Target' },
-    grape:   { icon: '🪨', color: '#808080', value: 7,   name: 'Rock' }
-  },
-  'mahjong-ways': {
-    wild:    { icon: '🀄', color: '#ff0000', value: 100, name: 'Red Dragon' },
-    scatter: { icon: '🎴', color: '#00ff00', value: 25,  name: 'Mahjong Tile' },
-    seven:   { icon: '🀇', color: '#0000ff', value: 75,  name: 'Character One' },
-    bar:     { icon: '🀙', color: '#008000', value: 40,  name: 'Bamboo One' },
-    bell:    { icon: '🀡', color: '#ff4500', value: 25,  name: 'Dot One' },
-    cherry:  { icon: '🀐', color: '#ffd700', value: 18,  name: 'Wind Tile' },
-    lemon:   { icon: '🀅', color: '#ff69b4', value: 10,  name: 'Dragon Tile' },
-    orange:  { icon: '🀝', color: '#00ced1', value: 10,  name: 'Bamboo Tile' },
-    plum:    { icon: '🀒', color: '#9370db', value: 7,   name: 'Number Tile' },
-    grape:   { icon: '🏛️', color: '#8b4513', value: 7,   name: 'Mahjong Table' }
-  },
-  'mahjong-ways-2': {
-    wild:    { icon: '🀄', color: '#ff0000', value: 100, name: 'Red Dragon' },
-    scatter: { icon: '🎴', color: '#ffd700', value: 25,  name: 'Golden Tile' },
-    seven:   { icon: '🀇', color: '#0000ff', value: 75,  name: 'Character Wan' },
-    bar:     { icon: '🀙', color: '#228b22', value: 40,  name: 'Bamboo Suo' },
-    bell:    { icon: '🀡', color: '#9400d3', value: 25,  name: 'Dots Tong' },
-    cherry:  { icon: '🏮', color: '#ff4500', value: 18,  name: 'Lantern' },
-    lemon:   { icon: '🧧', color: '#ff0000', value: 10,  name: 'Red Envelope' },
-    orange:  { icon: '🏯', color: '#daa520', value: 10,  name: 'Pagoda' },
-    plum:    { icon: '🪭', color: '#ff1493', value: 7,   name: 'Fan' },
-    grape:   { icon: '🌸', color: '#ffb6c1', value: 7,   name: 'Sakura' }
-  },
-  'dragon-legend': {
-    wild:    { icon: '🐉', color: '#ff4500', value: 100, name: 'Dragon Wild' },
-    scatter: { icon: '🐉', color: '#ffd700', value: 25,  name: 'Dragon Egg' },
-    seven:   { icon: '🐲', color: '#ff0000', value: 75,  name: 'Fire Dragon' },
-    bar:     { icon: '🔥', color: '#ff6347', value: 40,  name: 'Flame' },
-    bell:    { icon: '⚔️', color: '#c0c0c0', value: 25,  name: 'Sword' },
-    cherry:  { icon: '💎', color: '#4169e1', value: 18,  name: 'Jade Orb' },
-    lemon:   { icon: '🏯', color: '#8b4513', value: 10,  name: 'Temple' },
-    orange:  { icon: '🥋', color: '#000080', value: 10,  name: 'Yin Yang' },
-    plum:    { icon: '📿', color: '#ffd700', value: 7,   name: 'Prayer Beads' },
-    grape:   { icon: '🎋', color: '#228b22', value: 7,   name: 'Bamboo' }
-  },
-  'lucky-neko': {
-    wild:    { icon: '🐱', color: '#ff69b4', value: 100, name: 'Lucky Cat Wild' },
-    scatter: { icon: '🐟', color: '#ffa500', value: 25,  name: 'Fish' },
-    seven:   { icon: '😺', color: '#ffd700', value: 75,  name: 'Golden Neko' },
-    bar:     { icon: '🎁', color: '#ff0000', value: 40,  name: 'Gift Box' },
-    bell:    { icon: '🏮', color: '#ff4500', value: 25,  name: 'Lantern' },
-    cherry:  { icon: '🧧', color: '#dc143c', value: 18,  name: 'Red Envelope' },
-    lemon:   { icon: '🌸', color: '#ffb6c1', value: 10,  name: 'Sakura' },
-    orange:  { icon: '🏯', color: '#daa520', value: 10,  name: 'Shrine' },
-    plum:    { icon: '🪭', color: '#ff1493', value: 7,   name: 'Fan' },
-    grape:   { icon: '🎐', color: '#00ced1', value: 7,   name: 'Wind Bell' }
-  },
-  'bali-vacation': {
-    wild:    { icon: '🏝️', color: '#00ced1', value: 100, name: 'Island Wild' },
-    scatter: { icon: '🌺', color: '#ff1493', value: 25,  name: 'Hibiscus' },
-    seven:   { icon: '🌴', color: '#228b22', value: 75,  name: 'Palm Tree' },
-    bar:     { icon: '🏄', color: '#1e90ff', value: 40,  name: 'Surfboard' },
-    bell:    { icon: '🐚', color: '#fffacd', value: 25,  name: 'Seashell' },
-    cherry:  { icon: '🍹', color: '#ff6347', value: 18,  name: 'Cocktail' },
-    lemon:   { icon: '🌅', color: '#ff8c00', value: 10,  name: 'Sunset' },
-    orange:  { icon: '🥥', color: '#8b4513', value: 10,  name: 'Coconut' },
-    plum:    { icon: '🐢', color: '#2e8b57', value: 7,   name: 'Turtle' },
-    grape:   { icon: '🐠', color: '#00bfff', value: 7,   name: 'Tropical Fish' }
-  },
-  'caishen-wins': {
-    wild:    { icon: '🧧', color: '#ff0000', value: 100, name: 'Caishen Wild' },
-    scatter: { icon: '💰', color: '#ffd700', value: 25,  name: 'Gold Ingot' },
-    seven:   { icon: '🏮', color: '#ff4500', value: 75,  name: 'Lantern' },
-    bar:     { icon: '💎', color: '#00ced1', value: 40,  name: 'Jade' },
-    bell:    { icon: '🪙', color: '#daa520', value: 25,  name: 'Coin' },
-    cherry:  { icon: '📜', color: '#8b4513', value: 18,  name: 'Scroll' },
-    lemon:   { icon: '🏯', color: '#cd853f', value: 10,  name: 'Temple' },
-    orange:  { icon: '🧨', color: '#ff0000', value: 10,  name: 'Firecracker' },
-    plum:    { icon: '🎎', color: '#ff69b4', value: 7,   name: 'Statue' },
-    grape:   { icon: '🎋', color: '#228b22', value: 7,   name: 'Bamboo' }
-  },
-  'double-fortune': {
-    wild:    { icon: '🎎', color: '#ff69b4', value: 100, name: 'Double Wild' },
-    scatter: { icon: '💎', color: '#ff1493', value: 25,  name: 'Jewel' },
-    seven:   { icon: '❤️', color: '#dc143c', value: 75,  name: 'Heart' },
-    bar:     { icon: '🪭', color: '#ff4500', value: 40,  name: 'Double Fan' },
-    bell:    { icon: '🧧', color: '#ff0000', value: 25,  name: 'Red Envelope' },
-    cherry:  { icon: '🏮', color: '#ff4500', value: 18,  name: 'Lantern' },
-    lemon:   { icon: '🌸', color: '#ffb6c1', value: 10,  name: 'Blossom' },
-    orange:  { icon: '🪙', color: '#ffd700', value: 10,  name: 'Coin' },
-    plum:    { icon: '🎐', color: '#00ced1', value: 7,   name: 'Chime' },
-    grape:   { icon: '🏯', color: '#8b4513', value: 7,   name: 'Pagoda' }
-  },
-  'gem-saviour': {
-    wild:    { icon: '⚔️', color: '#4169e1', value: 100, name: 'Sword Wild' },
-    scatter: { icon: '💎', color: '#00ff7f', value: 25,  name: 'Emerald' },
-    seven:   { icon: '🔮', color: '#9400d3', value: 75,  name: 'Crystal' },
-    bar:     { icon: '🛡️', color: '#c0c0c0', value: 40,  name: 'Shield' },
-    bell:    { icon: '💅', color: '#ff69b4', value: 25,  name: 'Amethyst' },
-    cherry:  { icon: '💛', color: '#ffd700', value: 18,  name: 'Topaz' },
-    lemon:   { icon: '💙', color: '#00bfff', value: 10,  name: 'Sapphire' },
-    orange:  { icon: '❤️', color: '#ff0000', value: 10,  name: 'Ruby' },
-    plum:    { icon: '💎', color: '#e6e6fa', value: 7,   name: 'Diamond' },
-    grape:   { icon: '📿', color: '#8b4513', value: 7,   name: 'Necklace' }
-  },
-  'dragon-fortune': {
-    wild:    { icon: '🐉', color: '#ff0000', value: 100, name: 'Dragon Wild' },
-    scatter: { icon: '🥚', color: '#ffd700', value: 25,  name: 'Dragon Egg' },
-    seven:   { icon: '💎', color: '#4169e1', value: 75,  name: 'Blue Orb' },
-    bar:     { icon: '🔥', color: '#ff4500', value: 40,  name: 'Fire' },
-    bell:    { icon: '💧', color: '#00bfff', value: 25,  name: 'Water' },
-    cherry:  { icon: '🌳', color: '#228b22', value: 18,  name: 'Earth' },
-    lemon:   { icon: '💨', color: '#87ceeb', value: 10,  name: 'Wind' },
-    orange:  { icon: '⚡', color: '#ffd700', value: 10,  name: 'Thunder' },
-    plum:    { icon: '❄️', color: '#00ced1', value: 7,   name: 'Ice' },
-    grape:   { icon: '🌀', color: '#9400d3', value: 7,   name: 'Void' }
-  }
-};
-
-// Default symbols for unlisted games
-const DEFAULT_SYMBOLS = {
-  wild:    { icon: '🐉', color: '#ffd700', value: 100, name: 'Wild' },
-  scatter: { icon: '💎', color: '#00f5d4', value: 25,  name: 'Scatter' },
-  seven:   { icon: '7️⃣', color: '#ff2d75', value: 75,  name: 'Seven' },
-  bar:     { icon: '📊', color: '#cd7f32', value: 40,  name: 'Bar' },
-  bell:    { icon: '🔔', color: '#ffd700', value: 25,  name: 'Bell' },
-  cherry:  { icon: '🍒', color: '#ff2d75', value: 18,  name: 'Cherry' },
-  lemon:   { icon: '🍋', color: '#fee440', value: 10,  name: 'Lemon' },
-  orange:  { icon: '🍊', color: '#ff9f1c', value: 10,  name: 'Orange' },
-  plum:    { icon: '🟣', color: '#9b59b6', value: 7,   name: 'Plum' },
-  grape:   { icon: '🍇', color: '#8e44ad', value: 7,   name: 'Grape' }
-};
-
-const SYMBOL_KEYS = Object.keys(DEFAULT_SYMBOLS);
-
-// Audio context
-let audioContext = null;
-const getAudioContext = () => {
-  if (!audioContext) {
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-  }
-  return audioContext;
-};
-
-const playSound = (type) => {
-  const ctx = getAudioContext();
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-
-  if (type === 'spin') {
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(400, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.1);
-    gain.gain.setValueAtTime(0.1, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.15);
-  } else if (type === 'stop') {
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(600, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.1);
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.1);
-  } else if (type === 'win') {
-    [523, 659, 784, 1047].forEach((freq, i) => {
-      setTimeout(() => {
-        const o = ctx.createOscillator();
-        const g = ctx.createGain();
-        o.connect(g);
-        g.connect(ctx.destination);
-        o.type = 'sine';
-        o.frequency.setValueAtTime(freq, ctx.currentTime);
-        g.gain.setValueAtTime(0.2, ctx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-        o.start(ctx.currentTime);
-        o.stop(ctx.currentTime + 0.3);
-      }, i * 100);
-    });
-  } else if (type === 'bigwin') {
-    for (let i = 0; i < 12; i++) {
-      setTimeout(() => {
-        const o = ctx.createOscillator();
-        const g = ctx.createGain();
-        o.connect(g);
-        g.connect(ctx.destination);
-        o.type = 'square';
-        o.frequency.setValueAtTime(400 + i * 80, ctx.currentTime);
-        g.gain.setValueAtTime(0.1, ctx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
-        o.start(ctx.currentTime);
-        o.stop(ctx.currentTime + 0.1);
-      }, i * 60);
-    }
-  }
-};
+function ActionButton({ icon, active, disabled, onClick, badge, size = 56 }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        background: active 
+          ? 'linear-gradient(135deg, #00f5d4, #00d4aa)' 
+          : 'linear-gradient(135deg, #2a1a4a, #1a0a2e)',
+        border: '2px solid',
+        borderColor: active ? '#00f5d4' : 'rgba(255, 215, 0, 0.3)',
+        color: active ? '#0a001a' : 'var(--gold)',
+        fontSize: '14px',
+        fontWeight: '700',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.4 : 1,
+        position: 'relative',
+        transition: 'all 0.2s ease'
+      }}
+    >
+      {icon}
+      {badge != null && badge > 0 && (
+        <span style={{
+          position: 'absolute',
+          top: '-4px',
+          right: '-4px',
+          background: '#ff2d75',
+          color: 'white',
+          fontSize: '10px',
+          padding: '2px 6px',
+          borderRadius: '10px',
+          fontWeight: '700'
+        }}>{badge}</span>
+      )}
+    </button>
+  );
+}
 
 export default function SlotGame() {
   const { slug } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { play: playSound, setMuted, isMuted } = useSlotSounds();
+  
+  // Debug mode via URL param
+  const debugMode = searchParams.get('debugGame') === 'true';
   
   const [game, setGame] = useState(null);
   const [balance, setBalance] = useState(0);
   const [bet, setBet] = useState(10);
   const [reels, setReels] = useState(Array(5).fill(null).map(() => Array(3).fill('cherry')));
   const [spinning, setSpinning] = useState(false);
-  const [reelStates, setReelStates] = useState([true, true, true, true, true]);
+  const [reelStates, setReelStates] = useState([false, false, false, false, false]);
   const [lastWin, setLastWin] = useState(0);
   const [freeSpins, setFreeSpins] = useState(0);
   const [message, setMessage] = useState('');
@@ -297,17 +74,47 @@ export default function SlotGame() {
   const [showBigWin, setShowBigWin] = useState(false);
   const [autoSpin, setAutoSpin] = useState(false);
   const [showPaytable, setShowPaytable] = useState(false);
+  const [showFreeSpinTransition, setShowFreeSpinTransition] = useState(false);
+  const [pendingFreeSpins, setPendingFreeSpins] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingStage, setLoadingStage] = useState('init');
+  
+  // Debug stats from PixiSlotReels
+  const [debugStats, setDebugStats] = useState({
+    fps: 0,
+    particleCount: 0,
+    assetStatus: {},
+    symbolCount: 0,
+    width: 0,
+    height: 0,
+    initialized: false
+  });
+  
+  // Generate spin ID for tracking
+  const [spinId, setSpinId] = useState('');
 
-  // Get symbols for current game
-  const SYMBOLS = GAME_THEMES[slug] || DEFAULT_SYMBOLS;
+  const SYMBOLS = getSymbolsForGame(slug);
+  const themeSymbols = SLOT_SYMBOL_THEMES[slug] || DEFAULT_SLOT_SYMBOLS;
+  
+  // Responsive height calculation
+  const { height: slotHeight, isLandscape, orientation } = useSlotResponsiveHeight(280, 420);
+
+  // Cleanup on unmount - cancel autoSpin and clear any pending operations
+  useEffect(() => {
+    return () => {
+      // Auto-spin timer is cleaned up by its own useEffect
+      // Just ensure we stop any ongoing spin
+      setAutoSpin(false);
+      setSpinning(false);
+    };
+  }, []);
 
   useEffect(() => {
     walletAPI.balance().then(({ data }) => setBalance(Number(data.balance) || 0)).catch(() => {});
     gameAPI.details(slug).then(({ data }) => {
       setGame(data);
       setBet(Number(data.min_bet));
-      // Initialize reels with random symbols
-      const themeSymbols = GAME_THEMES[slug] || DEFAULT_SYMBOLS;
       const keys = Object.keys(themeSymbols);
       const initialReels = Array(5).fill(null).map(() => 
         Array(3).fill(null).map(() => keys[Math.floor(Math.random() * keys.length)])
@@ -315,16 +122,21 @@ export default function SlotGame() {
       setReels(initialReels);
       setReelStates([false, false, false, false, false]);
     }).catch(() => navigate('/'));
-  }, [slug, navigate]);
+  }, [slug, navigate, themeSymbols]);
 
-  // Auto spin
+  // Auto-spin effect with proper cleanup
   useEffect(() => {
+    let autoSpinTimer = null;
+    
     if (autoSpin && !spinning && balance >= bet) {
-      const timer = setTimeout(() => spin(), 1000);
-      return () => clearTimeout(timer);
+      autoSpinTimer = setTimeout(() => spin(), 1000);
     } else if (autoSpin && (spinning || balance < bet)) {
       setAutoSpin(false);
     }
+    
+    return () => {
+      if (autoSpinTimer) clearTimeout(autoSpinTimer);
+    };
   }, [autoSpin, spinning, balance, bet]);
 
   const spinReels = async (finalReels) => {
@@ -334,46 +146,32 @@ export default function SlotGame() {
     setMessage('');
     setShowBigWin(false);
     
-    playSound('spin');
+    // Generate new spin ID for debug tracking
+    setSpinId(`spin_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+    
+    playSound('whoosh');
+    setReelStates([true, true, true, true, true]);
 
-    // Animate each reel stopping sequentially
     for (let i = 0; i < 5; i++) {
-      setReelStates(prev => prev.map((s, idx) => idx <= i ? false : true));
-      
-      // Spin this reel
-      const themeSymbols = GAME_THEMES[slug] || DEFAULT_SYMBOLS;
-      const keys = Object.keys(themeSymbols);
-      const spinInterval = setInterval(() => {
-        setReels(prev => {
-          const newReels = [...prev];
-          newReels[i] = [
-            keys[Math.floor(Math.random() * keys.length)],
-            keys[Math.floor(Math.random() * keys.length)],
-            keys[Math.floor(Math.random() * keys.length)]
-          ];
-          return newReels;
-        });
-      }, 50);
-
-      await new Promise(r => setTimeout(r, 200 + i * 150));
-      clearInterval(spinInterval);
-      
-      // Set final symbols for this reel
+      await new Promise(r => setTimeout(r, 300 + i * 180));
+      setReelStates(prev => {
+        const next = [...prev];
+        next[i] = false;
+        return next;
+      });
       setReels(prev => {
         const newReels = [...prev];
         newReels[i] = finalReels[i];
         return newReels;
       });
-      
-      playSound('stop');
-      await new Promise(r => setTimeout(r, 100));
+      playSound('clack');
     }
 
+    await new Promise(r => setTimeout(r, 200));
     setSpinning(false);
     setReelStates([false, false, false, false, false]);
   };
 
-  // Convert backend grid [{id,name}, ...] columns into string-id reels
   const normalizeGrid = (grid) => {
     if (!grid || !Array.isArray(grid)) return generateRandomReels();
     return grid.map(col =>
@@ -409,7 +207,6 @@ export default function SlotGame() {
           setMessage(`🎉 Win! ₱${data.totalWin.toLocaleString()}`);
         }
         
-        // Highlight winning paylines from engine response when available
         if (data.paylineWins && data.paylineWins.length > 0) {
           setWinningLines(data.paylineWins.map(w => w.payline));
         } else if (data.grid) {
@@ -418,8 +215,9 @@ export default function SlotGame() {
       }
 
       if (data.freeSpinsAwarded > 0) {
-        setFreeSpins(prev => prev + data.freeSpinsAwarded);
-        setMessage(prev => (prev || '') + ` 🎁 +${data.freeSpinsAwarded} Free Spins!`);
+        setPendingFreeSpins(data.freeSpinsAwarded);
+        setShowFreeSpinTransition(true);
+        playSound('scatter');
       }
     } catch (err) {
       setMessage(err.response?.data?.error || 'Spin failed');
@@ -428,7 +226,6 @@ export default function SlotGame() {
   };
 
   const generateRandomReels = () => {
-    const themeSymbols = GAME_THEMES[slug] || DEFAULT_SYMBOLS;
     const keys = Object.keys(themeSymbols);
     return Array(5).fill(null).map(() => 
       Array(3).fill(null).map(() => keys[Math.floor(Math.random() * keys.length)])
@@ -452,7 +249,9 @@ export default function SlotGame() {
         setMessage(`🎁 Free Spin Win! ₱${data.totalWin.toLocaleString()}`);
       }
       if (data.freeSpinsAwarded > 0) {
-        setFreeSpins(prev => prev + data.freeSpinsAwarded);
+        setPendingFreeSpins(data.freeSpinsAwarded);
+        setShowFreeSpinTransition(true);
+        playSound('scatter');
       }
     } catch (err) {
       setMessage(err.response?.data?.error || 'Free spin failed');
@@ -500,9 +299,7 @@ export default function SlotGame() {
           fontWeight: '800',
           fontSize: '13px',
           cursor: 'pointer'
-        }}>
-          <Link to="/" style={{ color: '#1a0a2e', textDecoration: 'none', fontWeight: '800', fontSize: '13px' }}>← Home</Link>
-        </button>
+        }}>← Home</button>
         
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: '10px', color: 'var(--gold)', opacity: 0.8, letterSpacing: '1px' }}>BALANCE</div>
@@ -559,12 +356,7 @@ export default function SlotGame() {
       </div>
 
       {/* Slot Machine */}
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        position: 'relative'
-      }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
         {/* Jackpot Display */}
         <div style={{
           textAlign: 'center',
@@ -614,12 +406,19 @@ export default function SlotGame() {
               reelStates={reelStates}
               spinning={spinning}
               winningLines={winningLines}
-              themeSymbols={GAME_THEMES[slug] || DEFAULT_SYMBOLS}
+              themeSymbols={themeSymbols}
               lastWin={lastWin}
               showBigWin={showBigWin}
               freeSpins={freeSpins}
               message={message}
-              height={Math.min(390, Math.max(300, Math.floor(window.innerHeight * 0.42)))}
+              bet={bet}
+              height={slotHeight}
+              onLoadingChange={({ loading, progress, stage }) => {
+                setIsLoading(loading);
+                setLoadingProgress(progress);
+                setLoadingStage(stage);
+              }}
+              onDebugStats={debugMode ? setDebugStats : undefined}
             />
           </div>
           <div style={{
@@ -672,80 +471,19 @@ export default function SlotGame() {
         )}
 
         {/* Bet Controls */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '16px',
-          marginBottom: '16px',
-          padding: '12px',
-          background: 'linear-gradient(135deg, rgba(255, 215, 0, 0.1), rgba(255, 215, 0, 0.05))',
-          borderRadius: '16px',
-          border: '1px solid rgba(255, 215, 0, 0.3)'
-        }}>
-          <button onClick={() => setBet(Math.max(Number(game.min_bet), bet - Number(game.min_bet)))} disabled={spinning} style={{
-            width: '44px',
-            height: '44px',
-            borderRadius: '50%',
-            background: 'linear-gradient(135deg, #ffd700, #b8860b)',
-            border: 'none',
-            color: '#1a0a2e',
-            fontSize: '22px',
-            fontWeight: '900',
-            cursor: spinning ? 'not-allowed' : 'pointer',
-            opacity: spinning ? 0.5 : 1
-          }}>−</button>
-
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '10px', color: 'rgba(255, 215, 0, 0.8)', letterSpacing: '1px' }}>BET</div>
-            <div style={{
-              fontSize: '28px',
-              fontWeight: '900',
-              color: 'var(--gold)'
-            }}>₱{bet}</div>
-          </div>
-
-          <button onClick={() => setBet(Math.min(Number(game.max_bet), bet + Number(game.min_bet)))} disabled={spinning || bet + Number(game.min_bet) > balance} style={{
-            width: '44px',
-            height: '44px',
-            borderRadius: '50%',
-            background: 'linear-gradient(135deg, #ffd700, #b8860b)',
-            border: 'none',
-            color: '#1a0a2e',
-            fontSize: '22px',
-            fontWeight: '900',
-            cursor: spinning || bet + Number(game.min_bet) > balance ? 'not-allowed' : 'pointer',
-            opacity: spinning || bet + Number(game.min_bet) > balance ? 0.3 : 1
-          }}>+</button>
-        </div>
-
-        {/* Quick Bet Chips */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'center',
-          gap: '8px',
-          marginBottom: '16px',
-          flexWrap: 'wrap'
-        }}>
-          {[10, 50, 100, 500, 1000].filter(v => v >= Number(game.min_bet) && v <= Number(game.max_bet)).map(v => (
-            <button key={v} onClick={() => setBet(v)} disabled={spinning || v > balance} style={{
-              padding: '8px 16px',
-              borderRadius: '12px',
-              background: bet === v ? 'linear-gradient(135deg, #ffd700, #b8860b)' : v > balance ? 'rgba(255, 255, 255, 0.02)' : 'rgba(255, 215, 0, 0.1)',
-              border: bet === v ? 'none' : '1px solid rgba(255, 215, 0, 0.3)',
-              color: bet === v ? '#1a0a2e' : v > balance ? 'rgba(255, 215, 0, 0.3)' : 'var(--gold)',
-              fontWeight: '700',
-              fontSize: '12px',
-              cursor: spinning || v > balance ? 'not-allowed' : 'pointer',
-              opacity: spinning ? 0.5 : 1
-            }}>₱{v}</button>
-          ))}
-        </div>
+        <BetControls
+          bet={bet}
+          minBet={Number(game.min_bet)}
+          maxBet={Number(game.max_bet)}
+          balance={balance}
+          disabled={spinning}
+          onChange={setBet}
+        />
 
         {/* Balance Warning */}
         {balance <= 0 && (
           <div style={{
-            marginBottom: '16px',
+            marginBottom: '12px',
             padding: '12px',
             background: 'rgba(255, 71, 87, 0.2)',
             borderRadius: '12px',
@@ -759,89 +497,76 @@ export default function SlotGame() {
         )}
 
         {/* Spin Buttons */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'center',
-          gap: '12px',
-          marginBottom: '16px'
-        }}>
-          {/* Auto Spin */}
-          <button onClick={() => setAutoSpin(!autoSpin)} disabled={spinning || balance < bet} style={{
-            width: '56px',
-            height: '56px',
-            borderRadius: '50%',
-            background: autoSpin ? 'linear-gradient(135deg, #00f5d4, #00d4aa)' : 'linear-gradient(135deg, #2a1a4a, #1a0a2e)',
-            border: '2px solid',
-            borderColor: autoSpin ? '#00f5d4' : 'rgba(255, 215, 0, 0.3)',
-            color: autoSpin ? '#0a001a' : 'var(--gold)',
-            fontSize: '14px',
-            fontWeight: '700',
-            cursor: balance < bet ? 'not-allowed' : 'pointer',
-            opacity: balance < bet ? 0.3 : 1,
-            lineHeight: 1
-          }}>
-            {autoSpin ? '⏹' : '🔄'}
-          </button>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px', marginBottom: '12px' }}>
+          <ActionButton
+            icon={autoSpin ? '⏹' : '🔄'}
+            active={autoSpin}
+            disabled={spinning || balance < bet}
+            onClick={() => setAutoSpin(!autoSpin)}
+            size={52}
+          />
 
-          {/* Main Spin Button */}
-          <button onClick={spin} disabled={spinning || balance < bet || balance <= 0} style={{
-            width: '100px',
-            height: '100px',
-            borderRadius: '50%',
-            background: spinning || balance < bet || balance <= 0
-              ? 'linear-gradient(135deg, #2a1a4a, #1a0a2e)'
-              : 'linear-gradient(135deg, #ffd700, #ffed4a, #ffd700)',
-            border: '4px solid',
-            borderColor: spinning || balance < bet || balance <= 0 ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.4)',
-            color: spinning || balance < bet || balance <= 0 ? '#666' : '#1a0a2e',
-            fontSize: '18px',
-            fontWeight: '900',
-            cursor: spinning || balance < bet || balance <= 0 ? 'not-allowed' : 'pointer',
-            boxShadow: spinning || balance < bet || balance <= 0 ? 'none' : '0 0 40px rgba(255, 215, 0, 0.6)',
-            textTransform: 'uppercase',
-            letterSpacing: '2px',
-            animation: spinning ? 'spinPulse 0.3s ease infinite' : 'none'
-          }}>
-            {spinning ? '🎰' : 'SPIN'}
-          </button>
+          <SpinButton
+            onClick={spin}
+            disabled={spinning || balance < bet}
+            spinning={spinning}
+            balance={balance}
+            bet={bet}
+          />
 
-          {/* Free Spin */}
-          <button onClick={freeSpins > 0 ? useFreeSpin : () => setShowPaytable(true)} disabled={spinning} style={{
-            width: '56px',
-            height: '56px',
-            borderRadius: '50%',
-            background: freeSpins > 0 ? 'linear-gradient(135deg, #00f5d4, #00d4aa)' : 'linear-gradient(135deg, #2a1a4a, #1a0a2e)',
-            border: '2px solid',
-            borderColor: freeSpins > 0 ? '#00f5d4' : 'rgba(255, 215, 0, 0.3)',
-            color: freeSpins > 0 ? '#0a001a' : 'var(--gold)',
-            fontSize: '14px',
-            fontWeight: '700',
-            cursor: 'pointer',
-            position: 'relative'
-          }}>
-            {freeSpins > 0 ? '🎁' : '📋'}
-            {freeSpins > 0 && (
-              <span style={{
-                position: 'absolute',
-                top: '-4px',
-                right: '-4px',
-                background: '#ff2d75',
-                color: 'white',
-                fontSize: '10px',
-                padding: '2px 6px',
-                borderRadius: '10px',
-                fontWeight: '700'
-              }}>{freeSpins}</span>
-            )}
+          <ActionButton
+            icon={freeSpins > 0 ? '🎁' : '📋'}
+            active={freeSpins > 0}
+            disabled={spinning}
+            onClick={freeSpins > 0 ? useFreeSpin : () => setShowPaytable(true)}
+            badge={freeSpins > 0 ? freeSpins : null}
+            size={52}
+          />
+        </div>
+
+        {/* Mute Toggle */}
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '8px' }}>
+          <button
+            onClick={() => setMuted(!isMuted)}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '20px',
+              border: '1px solid rgba(255, 215, 0, 0.2)',
+              background: isMuted ? 'rgba(255, 71, 87, 0.15)' : 'rgba(255, 215, 0, 0.08)',
+              color: isMuted ? '#ff4757' : 'var(--gold)',
+              fontSize: '12px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            {isMuted ? '🔇' : '🔊'} {isMuted ? 'Unmute' : 'Sound'}
+          </button>
+          <button
+            onClick={() => setShowPaytable(true)}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '20px',
+              border: '1px solid rgba(255, 215, 0, 0.2)',
+              background: 'rgba(255, 215, 0, 0.08)',
+              color: 'var(--gold)',
+              fontSize: '12px',
+              fontWeight: '600',
+              cursor: 'pointer'
+            }}
+          >
+            📋 Paytable
           </button>
         </div>
 
-        {/* Paytable */}
+        {/* Paytable Modal */}
         {showPaytable && (
           <div style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0, 0, 0, 0.9)',
+            background: 'rgba(0, 0, 0, 0.92)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -858,12 +583,7 @@ export default function SlotGame() {
               overflowY: 'auto',
               border: '2px solid rgba(255, 215, 0, 0.3)'
             }}>
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: '20px'
-              }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <h3 style={{
                   fontSize: '20px',
                   fontWeight: '900',
@@ -911,7 +631,7 @@ export default function SlotGame() {
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ padding: '4px 10px', background: 'rgba(255,215,0,0.15)', borderRadius: '8px', color: 'var(--gold)', fontWeight: '700', fontSize: '13px' }}>
-                        {key === 'wild' || key === 'scatter' ? `up to ${sym.value}x` : `up to ${sym.value}x`}
+                        up to {sym.value}x
                       </div>
                     </div>
                   </div>
@@ -924,11 +644,6 @@ export default function SlotGame() {
 
       {/* Animations */}
       <style>{`
-        @keyframes symbolSpin {
-          0% { transform: translateY(-10px); opacity: 0.4; }
-          50% { transform: translateY(0); opacity: 1; }
-          100% { transform: translateY(10px); opacity: 0.4; }
-        }
         @keyframes winPulse {
           0%, 100% { transform: scale(1); }
           50% { transform: scale(1.1); }
@@ -946,7 +661,152 @@ export default function SlotGame() {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.8; }
         }
+        @keyframes chipShine {
+          0% { left: -100%; }
+          50%, 100% { left: 100%; }
+        }
+        @keyframes logoFloat {
+          0%, 100% { transform: translateY(0) rotate(0deg); }
+          50% { transform: translateY(-10px) rotate(5deg); }
+        }
+        @keyframes dotPulse {
+          0%, 100% { opacity: 0.3; transform: scale(0.8); }
+          50% { opacity: 1; transform: scale(1.2); }
+        }
       `}</style>
+
+      {/* Loading Overlay */}
+      {isLoading && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'radial-gradient(circle at center, #1a0a30, #0a001a)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000
+        }}>
+          {/* Animated logo */}
+          <div style={{
+            fontSize: '64px',
+            marginBottom: '24px',
+            animation: 'logoFloat 2s ease-in-out infinite'
+          }}>🎰</div>
+          
+          {/* Title */}
+          <div style={{
+            fontSize: '32px',
+            fontWeight: '900',
+            background: 'linear-gradient(135deg, #ffd700, #ffed4a)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            marginBottom: '32px',
+            letterSpacing: '4px'
+          }}>LOADING</div>
+          
+          {/* Progress bar container */}
+          <div style={{
+            width: '200px',
+            height: '6px',
+            background: 'rgba(255, 215, 0, 0.15)',
+            borderRadius: '3px',
+            overflow: 'hidden',
+            marginBottom: '16px'
+          }}>
+            {/* Progress bar fill */}
+            <div style={{
+              width: `${loadingProgress}%`,
+              height: '100%',
+              background: 'linear-gradient(90deg, #ffd700, #ffed4a)',
+              borderRadius: '3px',
+              transition: 'width 0.3s ease',
+              boxShadow: '0 0 10px rgba(255, 215, 0, 0.5)'
+            }} />
+          </div>
+          
+          {/* Stage text */}
+          <div style={{
+            fontSize: '12px',
+            color: 'rgba(255, 215, 0, 0.6)',
+            letterSpacing: '2px',
+            textTransform: 'uppercase'
+          }}>
+            {loadingStage === 'init' && 'Initializing...'}
+            {loadingStage === 'canvas' && 'Creating canvas...'}
+            {loadingStage === 'assets' && 'Loading assets...'}
+            {loadingStage === 'scene' && 'Building scene...'}
+            {loadingStage === 'finalizing' && 'Almost ready...'}
+            {loadingStage === 'ready' && 'Ready!'}
+          </div>
+          
+          {/* Spinning dots */}
+          <div style={{
+            marginTop: '20px',
+            display: 'flex',
+            gap: '8px'
+          }}>
+            {[0, 1, 2].map(i => (
+              <div
+                key={i}
+                style={{
+                  width: '8px',
+                  height: '8px',
+                  background: '#ffd700',
+                  borderRadius: '50%',
+                  animation: `dotPulse 1s ease-in-out ${i * 0.2}s infinite`
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Free Spin Transition Overlay */}
+      {showFreeSpinTransition && (
+        <FreeSpinTransition
+          spinsAwarded={pendingFreeSpins}
+          onComplete={() => {
+            setShowFreeSpinTransition(false);
+            setFreeSpins(prev => prev + pendingFreeSpins);
+            setPendingFreeSpins(0);
+          }}
+        />
+      )}
+
+      {/* Big Win Overlay */}
+      {showBigWin && lastWin > 0 && (
+        <BigWinOverlay
+          amount={lastWin}
+          bet={bet}
+          onClose={() => {
+            setShowBigWin(false);
+          }}
+        />
+      )}
+
+      {/* Debug Overlay */}
+      {debugMode && (
+        <DebugOverlay
+          fps={debugStats.fps}
+          reelState={reelStates}
+          spinId={spinId}
+          particleCount={debugStats.particleCount}
+          assetStatus={debugStats.assetStatus}
+          balance={balance}
+          bet={bet}
+          lastWin={lastWin}
+          spinning={spinning}
+          stats={{
+            symbols: debugStats.symbolCount,
+            width: debugStats.width,
+            height: debugStats.height,
+            initialized: debugStats.initialized ? 'Yes' : 'No',
+            freeSpins,
+            autoSpin: autoSpin ? 'On' : 'Off'
+          }}
+        />
+      )}
     </div>
   );
 }
