@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .tile-base {
+    position: relative;
+    width: 100%;
+    flex-shrink: 0;
+    box-sizing: border-box;
+  }
+}
+
+/* Reel spin — scrolls the strip upward continuously */
+@keyframes reelSpin {
+  0%   { transform: translateY(0); }
+  100% { transform: translateY(-50%); }
+}
+.reel-spinning {
+  animation: reelSpin 0.22s linear infinite;
+  will-change: transform;
+}
+
+/* Landing bounce when reel stops */
+@keyframes reelLand {
+  0%   { transform: translateY(-12px); opacity: 0.6; }
+  60%  { transform: translateY(3px); }
+  100% { transform: translateY(0); opacity: 1; }
+}
+.animate-reelland {
+  animation: reelLand 0.35s ease-out;
+}
+
+/* Win highlight glow */
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 10px rgba(250, 204, 21, 0.6); }
+  50%       { box-shadow: 0 0 22px rgba(250, 204, 21, 1); }
+}
+.animate-glow {
+  animation: glow 0.8s ease-in-out infinite;
+}
+
+@keyframes floaty {
+  0%, 100% { transform: translateY(0) rotate(-4deg); }
+  50%       { transform: translateY(-8px) rotate(4deg); }
+}
+.animate-floaty {
+  animation: floaty 2.4s ease-in-out infinite;
+}
+
+@keyframes shakeSm {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(-4px, -2px); }
+  40% { transform: translate(4px, 2px); }
+  60% { transform: translate(-3px, 1px); }
+  80% { transform: translate(3px, -1px); }
+}
+.animate-shake-sm { animation: shakeSm 0.45s ease-in-out; }
+
+@keyframes shakeBig {
+  0%, 100% { transform: translate(0, 0) rotate(0); }
+  15% { transform: translate(-8px, -4px) rotate(-1deg); }
+  30% { transform: translate(8px, 4px) rotate(1deg); }
+  45% { transform: translate(-7px, 2px) rotate(-0.8deg); }
+  60% { transform: translate(7px, -2px) rotate(0.8deg); }
+  75% { transform: translate(-4px, 1px); }
+}
+.animate-shake-big { animation: shakeBig 0.6s ease-in-out; }
