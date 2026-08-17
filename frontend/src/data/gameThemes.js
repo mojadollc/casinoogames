@@ -1,243 +1,379 @@
 // Single source of truth for all slot game theme data.
 // Imported by SlotGame, GamePlay, and any future game components.
 
-export const SLOT_SYMBOL_THEMES = {
-  'fortune-tiger': {
-    wild:    { icon: '🐅', color: '#ff6b00', value: 100, name: 'Tiger Wild' },
-    scatter: { icon: '🧧', color: '#ff0000', value: 25,  name: 'Lucky Red Envelope' },
-    seven:   { icon: '🐯', color: '#ffd700', value: 75,  name: 'Golden Tiger' },
-    bar:     { icon: '🎪', color: '#ff4757', value: 40,  name: 'Lantern' },
-    bell:    { icon: '🎋', color: '#2ed573', value: 25,  name: 'Bamboo' },
-    cherry:  { icon: '🍊', color: '#ff9f43', value: 18,  name: 'Mandarin' },
-    lemon:   { icon: '🏯', color: '#eccc68', value: 10,  name: 'Temple' },
-    orange:  { icon: '🎎', color: '#ff6b6b', value: 10,  name: 'Daruma' },
-    plum:    { icon: '🪭', color: '#ff4757', value: 7,   name: 'Fan' },
-    grape:   { icon: '🎐', color: '#70a1ff', value: 7,   name: 'Wind Chime' },
-  },
-  'fortune-ox': {
-    wild:    { icon: '🐂', color: '#c41e3a', value: 100, name: 'Ox Wild' },
-    scatter: { icon: '💰', color: '#ffd700', value: 25,  name: 'Gold Ingot' },
-    seven:   { icon: '🐃', color: '#8b4513', value: 75,  name: 'Water Buffalo' },
-    bar:     { icon: '🌾', color: '#daa520', value: 40,  name: 'Rice' },
-    bell:    { icon: '🏔️', color: '#6b8e23', value: 25,  name: 'Mountain' },
-    cherry:  { icon: '🥬', color: '#228b22', value: 18,  name: 'Cabbage' },
-    lemon:   { icon: '🧺', color: '#8b4513', value: 10,  name: 'Basket' },
-    orange:  { icon: '🎋', color: '#228b22', value: 10,  name: 'Bamboo' },
-    plum:    { icon: '🪷', color: '#ff69b4', value: 7,   name: 'Lotus' },
-    grape:   { icon: '☔', color: '#ff6347', value: 7,   name: 'Umbrella' },
-  },
-  'fortune-mouse': {
-    wild:    { icon: '🐭', color: '#ff9999', value: 100, name: 'Mouse Wild' },
-    scatter: { icon: '🧀', color: '#ffd700', value: 25,  name: 'Golden Cheese' },
-    seven:   { icon: '🐀', color: '#4a4a4a', value: 75,  name: 'Rat King' },
-    bar:     { icon: '🍚', color: '#fffacd', value: 40,  name: 'Rice Bowl' },
-    bell:    { icon: '🧧', color: '#ff0000', value: 25,  name: 'Red Packet' },
-    cherry:  { icon: '🥮', color: '#d2691e', value: 18,  name: 'Mooncake' },
-    lemon:   { icon: '🏮', color: '#ff4500', value: 10,  name: 'Lantern' },
-    orange:  { icon: '🧨', color: '#ff0000', value: 10,  name: 'Firecracker' },
-    plum:    { icon: '🎎', color: '#ff1493', value: 7,   name: 'Doll' },
-    grape:   { icon: '🪙', color: '#ffd700', value: 7,   name: 'Coin' },
-  },
-  'gates-of-olympus': {
-    wild:    { icon: '⚔️', color: '#ff0000', value: 100, name: 'Zeus Lightning' },
-    scatter: { icon: '🏛️', color: '#4169e1', value: 25,  name: 'Temple' },
-    seven:   { icon: '👑', color: '#ffd700', value: 75,  name: 'Crown' },
-    bar:     { icon: '🦅', color: '#8b4513', value: 40,  name: 'Eagle' },
-    bell:    { icon: '⚡', color: '#ffd700', value: 25,  name: 'Lightning Bolt' },
-    cherry:  { icon: '🛡️', color: '#c0c0c0', value: 18,  name: 'Shield' },
-    lemon:   { icon: '🏺', color: '#cd853f', value: 10,  name: 'Amphora' },
-    orange:  { icon: '🌊', color: '#00bfff', value: 10,  name: 'Wave' },
-    plum:    { icon: '🦉', color: '#8b4513', value: 7,   name: 'Owl' },
-    grape:   { icon: '🍇', color: '#8b008b', value: 7,   name: 'Grapes' },
-  },
-  'starlight-princess': {
-    wild:    { icon: '👸', color: '#ff69b4', value: 100, name: 'Princess Wild' },
-    scatter: { icon: '⭐', color: '#ffd700', value: 25,  name: 'Star' },
-    seven:   { icon: '👑', color: '#ff1493', value: 75,  name: 'Crown' },
-    bar:     { icon: '💫', color: '#da70d6', value: 40,  name: 'Sparkle' },
-    bell:    { icon: '🌙', color: '#f0e68c', value: 25,  name: 'Moon' },
-    cherry:  { icon: '💎', color: '#e6e6fa', value: 18,  name: 'Diamond' },
-    lemon:   { icon: '🌸', color: '#ffb6c1', value: 10,  name: 'Cherry Blossom' },
-    orange:  { icon: '🎀', color: '#ff69b4', value: 10,  name: 'Ribbon' },
-    plum:    { icon: '💒', color: '#dda0dd', value: 7,   name: 'Castle' },
-    grape:   { icon: '🦄', color: '#e6e6fa', value: 7,   name: 'Unicorn' },
-  },
-  'sweet-bonanza': {
-    wild:    { icon: '🍭', color: '#ff69b4', value: 100, name: 'Lollipop Wild' },
-    scatter: { icon: '🍬', color: '#ff1493', value: 25,  name: 'Candy Scatter' },
-    seven:   { icon: '🎂', color: '#ffdab9', value: 75,  name: 'Cake' },
-    bar:     { icon: '🍩', color: '#d2691e', value: 40,  name: 'Donut' },
-    bell:    { icon: '🧁', color: '#ff69b4', value: 25,  name: 'Cupcake' },
-    cherry:  { icon: '🍪', color: '#daa520', value: 18,  name: 'Cookie' },
-    lemon:   { icon: '🍦', color: '#fffacd', value: 10,  name: 'Ice Cream' },
-    orange:  { icon: '🍫', color: '#8b4513', value: 10,  name: 'Chocolate' },
-    plum:    { icon: '🧃', color: '#ff6347', value: 7,   name: 'Juice Box' },
-    grape:   { icon: '🍇', color: '#8b008b', value: 7,   name: 'Grape' },
-  },
-  'wild-bandito': {
-    wild:    { icon: '🤠', color: '#ffa500', value: 100, name: 'Bandito Wild' },
-    scatter: { icon: '💰', color: '#ffd700', value: 25,  name: 'Money Bag' },
-    seven:   { icon: '🌵', color: '#228b22', value: 75,  name: 'Cactus' },
-    bar:     { icon: '🤠', color: '#8b4513', value: 40,  name: 'Cowboy Hat' },
-    bell:    { icon: '🪣', color: '#daa520', value: 25,  name: 'Gold Pan' },
-    cherry:  { icon: '🦎', color: '#32cd32', value: 18,  name: 'Lizard' },
-    lemon:   { icon: '🐎', color: '#8b4513', value: 10,  name: 'Horse' },
-    orange:  { icon: '🌄', color: '#ff8c00', value: 10,  name: 'Sunset' },
-    plum:    { icon: '🎯', color: '#ff0000', value: 7,   name: 'Target' },
-    grape:   { icon: '🪨', color: '#808080', value: 7,   name: 'Rock' },
-  },
-  'mahjong-ways': {
-    wild:    { icon: '🀄', color: '#ff0000', value: 100, name: 'Red Dragon' },
-    scatter: { icon: '🎴', color: '#00ff00', value: 25,  name: 'Mahjong Tile' },
-    seven:   { icon: '🀇', color: '#0000ff', value: 75,  name: 'Character One' },
-    bar:     { icon: '🀙', color: '#008000', value: 40,  name: 'Bamboo One' },
-    bell:    { icon: '🀡', color: '#ff4500', value: 25,  name: 'Dot One' },
-    cherry:  { icon: '🀐', color: '#ffd700', value: 18,  name: 'Wind Tile' },
-    lemon:   { icon: '🀅', color: '#ff69b4', value: 10,  name: 'Dragon Tile' },
-    orange:  { icon: '🀝', color: '#00ced1', value: 10,  name: 'Bamboo Tile' },
-    plum:    { icon: '🀒', color: '#9370db', value: 7,   name: 'Number Tile' },
-    grape:   { icon: '🏛️', color: '#8b4513', value: 7,   name: 'Mahjong Table' },
-  },
-  'mahjong-ways-2': {
-    wild:    { icon: '🀄', color: '#ff0000', value: 100, name: 'Red Dragon' },
-    scatter: { icon: '🎴', color: '#ffd700', value: 25,  name: 'Golden Tile' },
-    seven:   { icon: '🀇', color: '#0000ff', value: 75,  name: 'Character Wan' },
-    bar:     { icon: '🀙', color: '#228b22', value: 40,  name: 'Bamboo Suo' },
-    bell:    { icon: '🀡', color: '#9400d3', value: 25,  name: 'Dots Tong' },
-    cherry:  { icon: '🏮', color: '#ff4500', value: 18,  name: 'Lantern' },
-    lemon:   { icon: '🧧', color: '#ff0000', value: 10,  name: 'Red Envelope' },
-    orange:  { icon: '🏯', color: '#daa520', value: 10,  name: 'Pagoda' },
-    plum:    { icon: '🪭', color: '#ff1493', value: 7,   name: 'Fan' },
-    grape:   { icon: '🌸', color: '#ffb6c1', value: 7,   name: 'Sakura' },
-  },
-  'dragon-legend': {
-    wild:    { icon: '🐉', color: '#ff4500', value: 100, name: 'Dragon Wild' },
-    scatter: { icon: '🐉', color: '#ffd700', value: 25,  name: 'Dragon Egg' },
-    seven:   { icon: '🐲', color: '#ff0000', value: 75,  name: 'Fire Dragon' },
-    bar:     { icon: '🔥', color: '#ff6347', value: 40,  name: 'Flame' },
-    bell:    { icon: '⚔️', color: '#c0c0c0', value: 25,  name: 'Sword' },
-    cherry:  { icon: '💎', color: '#4169e1', value: 18,  name: 'Jade Orb' },
-    lemon:   { icon: '🏯', color: '#8b4513', value: 10,  name: 'Temple' },
-    orange:  { icon: '🥋', color: '#000080', value: 10,  name: 'Yin Yang' },
-    plum:    { icon: '📿', color: '#ffd700', value: 7,   name: 'Prayer Beads' },
-    grape:   { icon: '🎋', color: '#228b22', value: 7,   name: 'Bamboo' },
-  },
-  'lucky-neko': {
-    wild:    { icon: '🐱', color: '#ff69b4', value: 100, name: 'Lucky Cat Wild' },
-    scatter: { icon: '🐟', color: '#ffa500', value: 25,  name: 'Fish' },
-    seven:   { icon: '😺', color: '#ffd700', value: 75,  name: 'Golden Neko' },
-    bar:     { icon: '🎁', color: '#ff0000', value: 40,  name: 'Gift Box' },
-    bell:    { icon: '🏮', color: '#ff4500', value: 25,  name: 'Lantern' },
-    cherry:  { icon: '🧧', color: '#dc143c', value: 18,  name: 'Red Envelope' },
-    lemon:   { icon: '🌸', color: '#ffb6c1', value: 10,  name: 'Sakura' },
-    orange:  { icon: '🏯', color: '#daa520', value: 10,  name: 'Shrine' },
-    plum:    { icon: '🪭', color: '#ff1493', value: 7,   name: 'Fan' },
-    grape:   { icon: '🎐', color: '#00ced1', value: 7,   name: 'Wind Bell' },
-  },
-  'bali-vacation': {
-    wild:    { icon: '🏝️', color: '#00ced1', value: 100, name: 'Island Wild' },
-    scatter: { icon: '🌺', color: '#ff1493', value: 25,  name: 'Hibiscus' },
-    seven:   { icon: '🌴', color: '#228b22', value: 75,  name: 'Palm Tree' },
-    bar:     { icon: '🏄', color: '#1e90ff', value: 40,  name: 'Surfboard' },
-    bell:    { icon: '🐚', color: '#fffacd', value: 25,  name: 'Seashell' },
-    cherry:  { icon: '🍹', color: '#ff6347', value: 18,  name: 'Cocktail' },
-    lemon:   { icon: '🌅', color: '#ff8c00', value: 10,  name: 'Sunset' },
-    orange:  { icon: '🥥', color: '#8b4513', value: 10,  name: 'Coconut' },
-    plum:    { icon: '🐢', color: '#2e8b57', value: 7,   name: 'Turtle' },
-    grape:   { icon: '🐠', color: '#00bfff', value: 7,   name: 'Tropical Fish' },
-  },
-  'caishen-wins': {
-    wild:    { icon: '🧧', color: '#ff0000', value: 100, name: 'Caishen Wild' },
-    scatter: { icon: '💰', color: '#ffd700', value: 25,  name: 'Gold Ingot' },
-    seven:   { icon: '🏮', color: '#ff4500', value: 75,  name: 'Lantern' },
-    bar:     { icon: '💎', color: '#00ced1', value: 40,  name: 'Jade' },
-    bell:    { icon: '🪙', color: '#daa520', value: 25,  name: 'Coin' },
-    cherry:  { icon: '📜', color: '#8b4513', value: 18,  name: 'Scroll' },
-    lemon:   { icon: '🏯', color: '#cd853f', value: 10,  name: 'Temple' },
-    orange:  { icon: '🧨', color: '#ff0000', value: 10,  name: 'Firecracker' },
-    plum:    { icon: '🎎', color: '#ff69b4', value: 7,   name: 'Statue' },
-    grape:   { icon: '🎋', color: '#228b22', value: 7,   name: 'Bamboo' },
-  },
-  'double-fortune': {
-    wild:    { icon: '🎎', color: '#ff69b4', value: 100, name: 'Double Wild' },
-    scatter: { icon: '💎', color: '#ff1493', value: 25,  name: 'Jewel' },
-    seven:   { icon: '❤️', color: '#dc143c', value: 75,  name: 'Heart' },
-    bar:     { icon: '🪭', color: '#ff4500', value: 40,  name: 'Double Fan' },
-    bell:    { icon: '🧧', color: '#ff0000', value: 25,  name: 'Red Envelope' },
-    cherry:  { icon: '🏮', color: '#ff4500', value: 18,  name: 'Lantern' },
-    lemon:   { icon: '🌸', color: '#ffb6c1', value: 10,  name: 'Blossom' },
-    orange:  { icon: '🪙', color: '#ffd700', value: 10,  name: 'Coin' },
-    plum:    { icon: '🎐', color: '#00ced1', value: 7,   name: 'Chime' },
-    grape:   { icon: '🏯', color: '#8b4513', value: 7,   name: 'Pagoda' },
-  },
-  'gem-saviour': {
-    wild:    { icon: '⚔️', color: '#4169e1', value: 100, name: 'Sword Wild' },
-    scatter: { icon: '💎', color: '#00ff7f', value: 25,  name: 'Emerald' },
-    seven:   { icon: '🔮', color: '#9400d3', value: 75,  name: 'Crystal' },
-    bar:     { icon: '🛡️', color: '#c0c0c0', value: 40,  name: 'Shield' },
-    bell:    { icon: '💅', color: '#ff69b4', value: 25,  name: 'Amethyst' },
-    cherry:  { icon: '💛', color: '#ffd700', value: 18,  name: 'Topaz' },
-    lemon:   { icon: '💙', color: '#00bfff', value: 10,  name: 'Sapphire' },
-    orange:  { icon: '❤️', color: '#ff0000', value: 10,  name: 'Ruby' },
-    plum:    { icon: '💎', color: '#e6e6fa', value: 7,   name: 'Diamond' },
-    grape:   { icon: '📿', color: '#8b4513', value: 7,   name: 'Necklace' },
-  },
-  'dragon-fortune': {
-    wild:    { icon: '🐉', color: '#ff0000', value: 100, name: 'Dragon Wild' },
-    scatter: { icon: '🥚', color: '#ffd700', value: 25,  name: 'Dragon Egg' },
-    seven:   { icon: '💎', color: '#4169e1', value: 75,  name: 'Blue Orb' },
-    bar:     { icon: '🔥', color: '#ff4500', value: 40,  name: 'Fire' },
-    bell:    { icon: '💧', color: '#00bfff', value: 25,  name: 'Water' },
-    cherry:  { icon: '🌳', color: '#228b22', value: 18,  name: 'Earth' },
-    lemon:   { icon: '💨', color: '#87ceeb', value: 10,  name: 'Wind' },
-    orange:  { icon: '⚡', color: '#ffd700', value: 10,  name: 'Thunder' },
-    plum:    { icon: '❄️', color: '#00ced1', value: 7,   name: 'Ice' },
-    grape:   { icon: '🌀', color: '#9400d3', value: 7,   name: 'Void' },
-  },
-};
+// ─────────────────────────────────────────────────────────────────────────────
+// Default payout/weight tables (matching backend engine)
+// ─────────────────────────────────────────────────────────────────────────────
+export const PAYOUT_VALUES = [
+  { 3: 2,  4: 10, 5: 50 },   // scatter
+  { 3: 5,  4: 20, 5: 100 },  // wild/high1
+  { 3: 4,  4: 15, 5: 75 },   // high2
+  { 3: 3,  4: 12, 5: 60 },   // mid
+  { 3: 2,  4: 8,  5: 40 },   // ace
+  { 3: 2,  4: 7,  5: 35 },   // king
+  { 3: 1,  4: 6,  5: 30 },   // queen
+  { 3: 1,  4: 5,  5: 25 },   // jack
+];
 
-export const DEFAULT_SLOT_SYMBOLS = {
-  wild:    { icon: '🐉', color: '#ffd700', value: 100, name: 'Wild' },
-  scatter: { icon: '💎', color: '#00f5d4', value: 25,  name: 'Scatter' },
-  seven:   { icon: '7️⃣', color: '#ff2d75', value: 75,  name: 'Seven' },
-  bar:     { icon: '📊', color: '#cd7f32', value: 40,  name: 'Bar' },
-  bell:    { icon: '🔔', color: '#ffd700', value: 25,  name: 'Bell' },
-  cherry:  { icon: '🍒', color: '#ff2d75', value: 18,  name: 'Cherry' },
-  lemon:   { icon: '🍋', color: '#fee440', value: 10,  name: 'Lemon' },
-  orange:  { icon: '🍊', color: '#ff9f1c', value: 10,  name: 'Orange' },
-  plum:    { icon: '🟣', color: '#9b59b6', value: 7,   name: 'Plum' },
-  grape:   { icon: '🍇', color: '#8e44ad', value: 7,   name: 'Grape' },
-};
+export const WEIGHT_VALUES = [2, 4, 5, 6, 8, 8, 9, 10];
 
-// Visual theme accents per game
-export const SLOT_GAME_THEMES = {
-  'fortune-tiger':      { bg: 'linear-gradient(135deg, #FF6B35 0%, #F7931E 50%, #FFD700 100%)', accent: '#FF6B35' },
-  'fortune-ox':         { bg: 'linear-gradient(135deg, #C41E3A 0%, #8B0000 50%, #FFD700 100%)', accent: '#C41E3A' },
-  'fortune-mouse':      { bg: 'linear-gradient(135deg, #FF69B4 0%, #FF1493 50%, #C71585 100%)', accent: '#FF69B4' },
-  'gates-of-olympus':   { bg: 'linear-gradient(135deg, #4B0082 0%, #8B008B 50%, #FFD700 100%)', accent: '#7B2FBE' },
-  'starlight-princess': { bg: 'linear-gradient(135deg, #FF69B4 0%, #FFB6C1 50%, #FFD700 100%)', accent: '#FF69B4' },
-  'sweet-bonanza':      { bg: 'linear-gradient(135deg, #FF69B4 0%, #FFB6C1 50%, #FFD700 100%)', accent: '#FF69B4' },
-  'wild-bandito':       { bg: 'linear-gradient(135deg, #8B4513 0%, #D2691E 50%, #FFD700 100%)', accent: '#D2691E' },
-  'mahjong-ways':       { bg: 'linear-gradient(135deg, #DC143C 0%, #B22222 50%, #FFD700 100%)', accent: '#DC143C' },
-  'mahjong-ways-2':     { bg: 'linear-gradient(135deg, #DC143C 0%, #B22222 50%, #FFD700 100%)', accent: '#DC143C' },
-  'dragon-legend':      { bg: 'linear-gradient(135deg, #FF4500 0%, #FF6347 50%, #FFD700 100%)', accent: '#FF4500' },
-  'lucky-neko':         { bg: 'linear-gradient(135deg, #FF69B4 0%, #FFB6C1 50%, #FFD700 100%)', accent: '#FF69B4' },
-  'bali-vacation':      { bg: 'linear-gradient(135deg, #00CED1 0%, #40E0D0 50%, #FFD700 100%)', accent: '#00CED1' },
-  'caishen-wins':       { bg: 'linear-gradient(135deg, #FF0000 0%, #DC143C 50%, #FFD700 100%)', accent: '#FF0000' },
-  'double-fortune':     { bg: 'linear-gradient(135deg, #FF1493 0%, #C71585 50%, #FFD700 100%)', accent: '#FF1493' },
-  'gem-saviour':        { bg: 'linear-gradient(135deg, #9370DB 0%, #8A2BE2 50%, #FFD700 100%)', accent: '#9370DB' },
-  'dragon-fortune':     { bg: 'linear-gradient(135deg, #FF4500 0%, #FF6347 50%, #FFD700 100%)', accent: '#FF4500' },
-};
-
-// All slugs that use the PixiJS SlotGame component
-export const SLOT_GAME_SLUGS = Object.keys(SLOT_SYMBOL_THEMES);
-
-/** Returns symbol set for a given game slug, falling back to defaults. */
-export function getSymbolsForGame(slug) {
-  return SLOT_SYMBOL_THEMES[slug] || DEFAULT_SLOT_SYMBOLS;
+function buildTheme(meta, defs) {
+  const symbols = {};
+  const payouts = {};
+  const weights = {};
+  const order = [];
+  defs.forEach((d, i) => {
+    symbols[d.id] = { ...d };
+    payouts[d.id] = PAYOUT_VALUES[i] || PAYOUT_VALUES[PAYOUT_VALUES.length - 1];
+    weights[d.id] = WEIGHT_VALUES[i] || WEIGHT_VALUES[WEIGHT_VALUES.length - 1];
+    order.push(d.id);
+  });
+  const scatter = defs.find(d => d.type === 'scatter');
+  const wild = defs.find(d => d.type === 'wild');
+  return { ...meta, symbols, payouts, weights, order, scatterId: scatter?.id, wildId: wild?.id };
 }
 
-/** Returns visual theme for a given game slug. */
+// ─────────────────────────────────────────────────────────────────────────────
+// Theme definitions — each symbol now has emoji, type, card, multiplier
+// ─────────────────────────────────────────────────────────────────────────────
+export const SLOT_THEMES = {
+  'fortune-tiger': buildTheme(
+    { id: 'fortune-tiger', title: 'Fortune Tiger', accent: '#FF6B35', bg: 'linear-gradient(135deg, #FF6B35 0%, #F7931E 50%, #FFD700 100%)' },
+    [
+      { id: 'scatter', emoji: '🧧', name: 'Red Envelope', type: 'scatter', color: '#ff0000' },
+      { id: 'wild',    emoji: '🐅', name: 'Tiger Wild',  type: 'wild', color: '#ff6b00', multiplier: 2 },
+      { id: 'seven',   emoji: '🐯', name: 'Golden Tiger', color: '#ffd700' },
+      { id: 'bar',     emoji: '🎪', name: 'Lantern', color: '#ff4757' },
+      { id: 'ace',     emoji: 'A',  name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K',  name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q',  name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J',  name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'fortune-ox': buildTheme(
+    { id: 'fortune-ox', title: 'Fortune Ox', accent: '#C41E3A', bg: 'linear-gradient(135deg, #C41E3A 0%, #8B0000 50%, #FFD700 100%)' },
+    [
+      { id: 'scatter', emoji: '💰', name: 'Gold Ingot', type: 'scatter', color: '#ffd700' },
+      { id: 'wild',    emoji: '🐂', name: 'Ox Wild', type: 'wild', color: '#c41e3a', multiplier: 2 },
+      { id: 'seven',   emoji: '🐃', name: 'Water Buffalo', color: '#8b4513' },
+      { id: 'bar',     emoji: '🌾', name: 'Rice', color: '#daa520' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'fortune-mouse': buildTheme(
+    { id: 'fortune-mouse', title: 'Fortune Mouse', accent: '#FF69B4', bg: 'linear-gradient(135deg, #FF69B4 0%, #FF1493 50%, #C71585 100%)' },
+    [
+      { id: 'scatter', emoji: '🧀', name: 'Golden Cheese', type: 'scatter', color: '#ffd700' },
+      { id: 'wild',    emoji: '🐭', name: 'Mouse Wild', type: 'wild', color: '#ff9999', multiplier: 2 },
+      { id: 'seven',   emoji: '🐀', name: 'Rat King', color: '#4a4a4a' },
+      { id: 'bar',     emoji: '🍚', name: 'Rice Bowl', color: '#fffacd' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'gates-of-olympus': buildTheme(
+    { id: 'gates-of-olympus', title: 'Gates of Olympus', accent: '#7B2FBE', bg: 'linear-gradient(135deg, #4B0082 0%, #8B008B 50%, #FFD700 100%)' },
+    [
+      { id: 'scatter', emoji: '🏛️', name: 'Temple', type: 'scatter', color: '#4169e1' },
+      { id: 'wild',    emoji: '⚔️', name: 'Zeus Lightning', type: 'wild', color: '#ff0000', multiplier: 2 },
+      { id: 'seven',   emoji: '👑', name: 'Crown', color: '#ffd700' },
+      { id: 'bar',     emoji: '🦅', name: 'Eagle', color: '#8b4513' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'starlight-princess': buildTheme(
+    { id: 'starlight-princess', title: 'Starlight Princess', accent: '#FF69B4', bg: 'linear-gradient(135deg, #FF69B4 0%, #FFB6C1 50%, #FFD700 100%)' },
+    [
+      { id: 'scatter', emoji: '⭐', name: 'Star', type: 'scatter', color: '#ffd700' },
+      { id: 'wild',    emoji: '👸', name: 'Princess Wild', type: 'wild', color: '#ff69b4', multiplier: 2 },
+      { id: 'seven',   emoji: '👑', name: 'Crown', color: '#ff1493' },
+      { id: 'bar',     emoji: '💫', name: 'Sparkle', color: '#da70d6' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'sweet-bonanza': buildTheme(
+    { id: 'sweet-bonanza', title: 'Sweet Bonanza', accent: '#FF69B4', bg: 'linear-gradient(135deg, #FF69B4 0%, #FFB6C1 50%, #FFD700 100%)' },
+    [
+      { id: 'scatter', emoji: '🍬', name: 'Candy Scatter', type: 'scatter', color: '#ff1493' },
+      { id: 'wild',    emoji: '🍭', name: 'Lollipop Wild', type: 'wild', color: '#ff69b4', multiplier: 2 },
+      { id: 'seven',   emoji: '🎂', name: 'Cake', color: '#ffdab9' },
+      { id: 'bar',     emoji: '🍩', name: 'Donut', color: '#d2691e' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'wild-bandito': buildTheme(
+    { id: 'wild-bandito', title: 'Wild Bandito', accent: '#D2691E', bg: 'linear-gradient(135deg, #8B4513 0%, #D2691E 50%, #FFD700 100%)' },
+    [
+      { id: 'scatter', emoji: '💰', name: 'Money Bag', type: 'scatter', color: '#ffd700' },
+      { id: 'wild',    emoji: '🤠', name: 'Bandito Wild', type: 'wild', color: '#ffa500', multiplier: 2 },
+      { id: 'seven',   emoji: '🌵', name: 'Cactus', color: '#228b22' },
+      { id: 'bar',     emoji: '🪣', name: 'Gold Pan', color: '#daa520' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'mahjong-ways': buildTheme(
+    { id: 'mahjong-ways', title: 'Mahjong Ways', accent: '#DC143C', bg: 'linear-gradient(135deg, #DC143C 0%, #B22222 50%, #FFD700 100%)' },
+    [
+      { id: 'scatter', emoji: '🎴', name: 'Mahjong Tile', type: 'scatter', color: '#00ff00' },
+      { id: 'wild',    emoji: '🀄', name: 'Red Dragon', type: 'wild', color: '#ff0000', multiplier: 2 },
+      { id: 'seven',   emoji: '🀇', name: 'Character One', color: '#0000ff' },
+      { id: 'bar',     emoji: '🀙', name: 'Bamboo One', color: '#008000' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'mahjong-ways-2': buildTheme(
+    { id: 'mahjong-ways-2', title: 'Mahjong Ways 2', accent: '#DC143C', bg: 'linear-gradient(135deg, #DC143C 0%, #B22222 50%, #FFD700 100%)' },
+    [
+      { id: 'scatter', emoji: '🎴', name: 'Golden Tile', type: 'scatter', color: '#ffd700' },
+      { id: 'wild',    emoji: '🀄', name: 'Red Dragon', type: 'wild', color: '#ff0000', multiplier: 2 },
+      { id: 'seven',   emoji: '🀇', name: 'Character Wan', color: '#0000ff' },
+      { id: 'bar',     emoji: '🀙', name: 'Bamboo Suo', color: '#228b22' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'dragon-legend': buildTheme(
+    { id: 'dragon-legend', title: 'Dragon Legend', accent: '#FF4500', bg: 'linear-gradient(135deg, #FF4500 0%, #FF6347 50%, #FFD700 100%)' },
+    [
+      { id: 'scatter', emoji: '🥚', name: 'Dragon Egg', type: 'scatter', color: '#ffd700' },
+      { id: 'wild',    emoji: '🐉', name: 'Dragon Wild', type: 'wild', color: '#ff4500', multiplier: 2 },
+      { id: 'seven',   emoji: '🐲', name: 'Fire Dragon', color: '#ff0000' },
+      { id: 'bar',     emoji: '🔥', name: 'Flame', color: '#ff6347' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'lucky-neko': buildTheme(
+    { id: 'lucky-neko', title: 'Lucky Neko', accent: '#FF69B4', bg: 'linear-gradient(135deg, #FF69B4 0%, #FFB6C1 50%, #FFD700 100%)' },
+    [
+      { id: 'scatter', emoji: '🐟', name: 'Fish', type: 'scatter', color: '#ffa500' },
+      { id: 'wild',    emoji: '🐱', name: 'Lucky Cat Wild', type: 'wild', color: '#ff69b4', multiplier: 2 },
+      { id: 'seven',   emoji: '😺', name: 'Golden Neko', color: '#ffd700' },
+      { id: 'bar',     emoji: '🎁', name: 'Gift Box', color: '#ff0000' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'bali-vacation': buildTheme(
+    { id: 'bali-vacation', title: 'Bali Vacation', accent: '#00CED1', bg: 'linear-gradient(135deg, #00CED1 0%, #40E0D0 50%, #FFD700 100%)' },
+    [
+      { id: 'scatter', emoji: '🌺', name: 'Hibiscus', type: 'scatter', color: '#ff1493' },
+      { id: 'wild',    emoji: '🏝️', name: 'Island Wild', type: 'wild', color: '#00ced1', multiplier: 2 },
+      { id: 'seven',   emoji: '🌴', name: 'Palm Tree', color: '#228b22' },
+      { id: 'bar',     emoji: '🏄', name: 'Surfboard', color: '#1e90ff' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'caishen-wins': buildTheme(
+    { id: 'caishen-wins', title: 'Caishen Wins', accent: '#FF0000', bg: 'linear-gradient(135deg, #FF0000 0%, #DC143C 50%, #FFD700 100%)' },
+    [
+      { id: 'scatter', emoji: '💰', name: 'Gold Ingot', type: 'scatter', color: '#ffd700' },
+      { id: 'wild',    emoji: '🧧', name: 'Caishen Wild', type: 'wild', color: '#ff0000', multiplier: 2 },
+      { id: 'seven',   emoji: '🏮', name: 'Lantern', color: '#ff4500' },
+      { id: 'bar',     emoji: '💎', name: 'Jade', color: '#00ced1' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'double-fortune': buildTheme(
+    { id: 'double-fortune', title: 'Double Fortune', accent: '#FF1493', bg: 'linear-gradient(135deg, #FF1493 0%, #C71585 50%, #FFD700 100%)' },
+    [
+      { id: 'scatter', emoji: '💎', name: 'Jewel', type: 'scatter', color: '#ff1493' },
+      { id: 'wild',    emoji: '🎎', name: 'Double Wild', type: 'wild', color: '#ff69b4', multiplier: 2 },
+      { id: 'seven',   emoji: '❤️', name: 'Heart', color: '#dc143c' },
+      { id: 'bar',     emoji: '🪭', name: 'Double Fan', color: '#ff4500' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'gem-saviour': buildTheme(
+    { id: 'gem-saviour', title: 'Gem Saviour', accent: '#9370DB', bg: 'linear-gradient(135deg, #9370DB 0%, #8A2BE2 50%, #FFD700 100%)' },
+    [
+      { id: 'scatter', emoji: '💎', name: 'Emerald', type: 'scatter', color: '#00ff7f' },
+      { id: 'wild',    emoji: '⚔️', name: 'Sword Wild', type: 'wild', color: '#4169e1', multiplier: 2 },
+      { id: 'seven',   emoji: '🔮', name: 'Crystal', color: '#9400d3' },
+      { id: 'bar',     emoji: '🛡️', name: 'Shield', color: '#c0c0c0' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'dragon-fortune': buildTheme(
+    { id: 'dragon-fortune', title: 'Dragon Fortune', accent: '#FF4500', bg: 'linear-gradient(135deg, #FF4500 0%, #FF6347 50%, #FFD700 100%)' },
+    [
+      { id: 'scatter', emoji: '🥚', name: 'Dragon Egg', type: 'scatter', color: '#ffd700' },
+      { id: 'wild',    emoji: '🐉', name: 'Dragon Wild', type: 'wild', color: '#ff0000', multiplier: 2 },
+      { id: 'seven',   emoji: '💎', name: 'Blue Orb', color: '#4169e1' },
+      { id: 'bar',     emoji: '🔥', name: 'Fire', color: '#ff4500' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Legacy exports for backwards compatibility
+// ─────────────────────────────────────────────────────────────────────────────
+export const SLOT_SYMBOL_THEMES = Object.fromEntries(
+  Object.entries(SLOT_THEMES).map(([slug, theme]) => [slug, theme.symbols])
+);
+
+export const DEFAULT_SLOT_SYMBOLS = {
+  wild:    { emoji: '🐉', color: '#ffd700', name: 'Wild', type: 'wild', multiplier: 2 },
+  scatter: { emoji: '💎', color: '#00f5d4', name: 'Scatter', type: 'scatter' },
+  seven:   { emoji: '7️⃣', color: '#ff2d75', name: 'Seven' },
+  bar:     { emoji: '📊', color: '#cd7f32', name: 'Bar' },
+  bell:    { emoji: '🔔', color: '#ffd700', name: 'Bell' },
+  cherry:  { emoji: '🍒', color: '#ff2d75', name: 'Cherry' },
+  lemon:   { emoji: '🍋', color: '#fee440', name: 'Lemon' },
+  orange:  { emoji: '🍊', color: '#ff9f1c', name: 'Orange' },
+  plum:    { emoji: '🟣', color: '#9b59b6', name: 'Plum' },
+  grape:   { emoji: '🍇', color: '#8e44ad', name: 'Grape' },
+};
+
+export const SLOT_GAME_THEMES = Object.fromEntries(
+  Object.entries(SLOT_THEMES).map(([slug, theme]) => [slug, { bg: theme.bg, accent: theme.accent }])
+);
+
+export const SLOT_GAME_SLUGS = Object.keys(SLOT_THEMES);
+
+export function getSymbolsForGame(slug) {
+  return SLOT_THEMES[slug]?.symbols || DEFAULT_SLOT_SYMBOLS;
+}
+
 export function getThemeForGame(slug) {
-  return SLOT_GAME_THEMES[slug] || { bg: 'linear-gradient(135deg, #1a1a2e, #16213e)', accent: '#FFD700' };
+  return SLOT_THEMES[slug] || { bg: 'linear-gradient(135deg, #1a1a2e, #16213e)', accent: '#FFD700', symbols: DEFAULT_SLOT_SYMBOLS };
+}
+
+export function getTheme(slug) {
+  return SLOT_THEMES[slug] || null;
+}
+
+export function randomSymbol(theme) {
+  const total = theme.order.reduce((s, id) => s + theme.weights[id], 0);
+  let r = Math.random() * total;
+  for (const id of theme.order) {
+    r -= theme.weights[id];
+    if (r <= 0) return id;
+  }
+  return theme.order[theme.order.length - 1];
+}
+
+export function makeReelStrip(theme, length = 14) {
+  return Array.from({ length }, () => randomSymbol(theme));
+}
+
+export function spinReels(theme) {
+  const reels = [];
+  for (let c = 0; c < 5; c++) {
+    reels.push([randomSymbol(theme), randomSymbol(theme), randomSymbol(theme)]);
+  }
+  return reels;
+}
+
+export function evaluateWin(reels, bet, theme) {
+  const payouts = theme.payouts;
+  const scatterId = theme.scatterId;
+  const centerLine = reels.map(col => col[1]);
+  let lineWin = 0;
+  let winSymbol = null;
+  let count = 0;
+  const linePositions = [];
+
+  const first = centerLine[0];
+  if (first && first !== scatterId) {
+    let c = 0;
+    for (let i = 0; i < 5; i++) {
+      if (centerLine[i] === first) {
+        c++;
+        linePositions.push([i, 1]);
+      } else break;
+    }
+    if (c >= 3 && payouts[first]?.[c]) {
+      lineWin = payouts[first][c] * bet;
+      winSymbol = first;
+      count = c;
+    }
+  }
+
+  let scatterCount = 0;
+  const scatterPositions = [];
+  for (let c = 0; c < 5; c++) {
+    for (let r = 0; r < 3; r++) {
+      if (reels[c][r] === scatterId) {
+        scatterCount++;
+        scatterPositions.push([c, r]);
+      }
+    }
+  }
+
+  let scatterWin = 0;
+  let freeSpins = 0;
+  if (scatterCount >= 3 && payouts[scatterId]) {
+    scatterWin = (payouts[scatterId][Math.min(scatterCount, 5)] || 0) * bet;
+    freeSpins = 10;
+  }
+
+  return {
+    lineWin,
+    winSymbol,
+    count,
+    linePositions,
+    scatterWin,
+    scatterCount,
+    scatterPositions,
+    freeSpins,
+    totalWin: lineWin + scatterWin,
+  };
 }

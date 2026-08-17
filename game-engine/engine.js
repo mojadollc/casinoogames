@@ -1,6 +1,8 @@
 const crypto = require('crypto');
 
+// ─────────────────────────────────────────────────────────────────────────────
 // Cryptographically secure RNG
+// ─────────────────────────────────────────────────────────────────────────────
 class SecureRNG {
   generate(min, max) {
     const range = max - min + 1;
@@ -12,419 +14,508 @@ class SecureRNG {
   generateSeed() {
     return crypto.randomBytes(32).toString('hex');
   }
-
-  shuffle(array) {
-    const arr = [...array];
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = this.generate(0, i);
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    return arr;
-  }
 }
 
-// Default slot configuration
-const DEFAULT_CONFIG = {
-  reels: 5,
-  rows: 3,
-  symbols: [
-    { id: 'wild',   name: 'Wild',   weight: 2,  payout: { 3: 10,  4: 30,  5: 100  }, isWild: true },
-    { id: 'scatter',name: 'Scatter',weight: 3,  payout: { 3: 2,   4: 8,   5: 25   }, isScatter: true },
-    { id: 'seven',  name: 'Seven',  weight: 5,  payout: { 3: 8,   4: 20,  5: 75   } },
-    { id: 'bar',    name: 'Bar',    weight: 8,  payout: { 3: 5,   4: 12,  5: 40   } },
-    { id: 'bell',   name: 'Bell',   weight: 10, payout: { 3: 4,   4: 10,  5: 25   } },
-    { id: 'cherry', name: 'Cherry', weight: 12, payout: { 3: 3,   4: 7,   5: 18   } },
-    { id: 'lemon',  name: 'Lemon',  weight: 15, payout: { 3: 1.5, 4: 4,   5: 10   } },
-    { id: 'orange', name: 'Orange', weight: 15, payout: { 3: 1.5, 4: 4,   5: 10   } },
-    { id: 'plum',   name: 'Plum',   weight: 15, payout: { 3: 1,   4: 3,   5: 7    } },
-    { id: 'grape',  name: 'Grape',  weight: 15, payout: { 3: 1,   4: 3,   5: 7    } }
-  ],
-  paylines: [
-    [1, 1, 1, 1, 1], // middle
-    [0, 0, 0, 0, 0], // top
-    [2, 2, 2, 2, 2], // bottom
-    [0, 1, 2, 1, 0], // V shape
-    [2, 1, 0, 1, 2], // inverted V
-    [0, 0, 1, 2, 2], // diagonal down
-    [2, 2, 1, 0, 0], // diagonal up
-    [1, 0, 0, 0, 1], // U shape top
-    [1, 2, 2, 2, 1], // U shape bottom
-    [0, 1, 1, 1, 0], // slight V
-    [2, 1, 1, 1, 2], // slight inverted V
-    [1, 0, 1, 0, 1], // zigzag top
-    [1, 2, 1, 2, 1], // zigzag bottom
-    [0, 1, 0, 1, 0], // W top
-    [2, 1, 2, 1, 2], // W bottom
-    [1, 1, 0, 1, 1], // dip top
-    [1, 1, 2, 1, 1], // dip bottom
-    [0, 0, 1, 0, 0], // bump top
-    [2, 2, 1, 2, 2], // bump bottom
-    [0, 2, 0, 2, 0], // extreme zigzag
-  ],
-  freeSpinsScatterCount: 3,
-  freeSpinsAwarded: 10,
-  bonusMultiplier: 2,
-  jackpotContribution: 0.01
+// ─────────────────────────────────────────────────────────────────────────────
+// Default payout/weight tables (per symbol tier)
+// Index 0 = scatter (highest payout, lowest weight)
+// ─────────────────────────────────────────────────────────────────────────────
+const PAYOUT_VALUES = [
+  { 3: 2,  4: 10, 5: 50 },   // scatter
+  { 3: 5,  4: 20, 5: 100 },  // high1 (wild-equivalent)
+  { 3: 4,  4: 15, 5: 75 },   // high2
+  { 3: 3,  4: 12, 5: 60 },   // mid1
+  { 3: 2,  4: 8,  5: 40 },   // ace
+  { 3: 2,  4: 7,  5: 35 },   // king
+  { 3: 1,  4: 6,  5: 30 },   // queen
+  { 3: 1,  4: 5,  5: 25 },   // jack
+];
+const WEIGHT_VALUES = [2, 4, 5, 6, 8, 8, 9, 10];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Build a complete theme from symbol definitions
+// ─────────────────────────────────────────────────────────────────────────────
+function buildTheme(meta, defs) {
+  const symbols = {};
+  const payouts = {};
+  const weights = {};
+  const order = [];
+
+  defs.forEach((d, i) => {
+    symbols[d.id] = { ...d };
+    payouts[d.id] = PAYOUT_VALUES[i] || PAYOUT_VALUES[PAYOUT_VALUES.length - 1];
+    weights[d.id] = WEIGHT_VALUES[i] || WEIGHT_VALUES[WEIGHT_VALUES.length - 1];
+    order.push(d.id);
+  });
+
+  const scatter = defs.find(d => d.type === 'scatter');
+  const wild = defs.find(d => d.type === 'wild');
+
+  return {
+    ...meta,
+    symbols,
+    payouts,
+    weights,
+    order,
+    scatterId: scatter?.id || 'scatter',
+    wildId: wild?.id || null,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Built-in themes (matching frontend gameThemes.js slugs)
+// ─────────────────────────────────────────────────────────────────────────────
+const THEMES = {
+  'fortune-tiger': buildTheme(
+    { id: 'fortune-tiger', title: 'Fortune Tiger', accent: '#FF6B35' },
+    [
+      { id: 'scatter', emoji: '🧧', name: 'Red Envelope', type: 'scatter', color: '#ff0000' },
+      { id: 'wild',    emoji: '🐅', name: 'Tiger Wild',  type: 'wild', color: '#ff6b00', multiplier: 2 },
+      { id: 'seven',   emoji: '🐯', name: 'Golden Tiger', color: '#ffd700' },
+      { id: 'bar',     emoji: '🎪', name: 'Lantern', color: '#ff4757' },
+      { id: 'ace',     emoji: 'A',  name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K',  name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q',  name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J',  name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'fortune-ox': buildTheme(
+    { id: 'fortune-ox', title: 'Fortune Ox', accent: '#C41E3A' },
+    [
+      { id: 'scatter', emoji: '💰', name: 'Gold Ingot', type: 'scatter', color: '#ffd700' },
+      { id: 'wild',    emoji: '🐂', name: 'Ox Wild', type: 'wild', color: '#c41e3a', multiplier: 2 },
+      { id: 'seven',   emoji: '🐃', name: 'Water Buffalo', color: '#8b4513' },
+      { id: 'bar',     emoji: '🌾', name: 'Rice', color: '#daa520' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'fortune-mouse': buildTheme(
+    { id: 'fortune-mouse', title: 'Fortune Mouse', accent: '#FF69B4' },
+    [
+      { id: 'scatter', emoji: '🧀', name: 'Golden Cheese', type: 'scatter', color: '#ffd700' },
+      { id: 'wild',    emoji: '🐭', name: 'Mouse Wild', type: 'wild', color: '#ff9999', multiplier: 2 },
+      { id: 'seven',   emoji: '🐀', name: 'Rat King', color: '#4a4a4a' },
+      { id: 'bar',     emoji: '🍚', name: 'Rice Bowl', color: '#fffacd' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'gates-of-olympus': buildTheme(
+    { id: 'gates-of-olympus', title: 'Gates of Olympus', accent: '#7B2FBE' },
+    [
+      { id: 'scatter', emoji: '🏛️', name: 'Temple', type: 'scatter', color: '#4169e1' },
+      { id: 'wild',    emoji: '⚔️', name: 'Zeus Lightning', type: 'wild', color: '#ff0000', multiplier: 2 },
+      { id: 'seven',   emoji: '👑', name: 'Crown', color: '#ffd700' },
+      { id: 'bar',     emoji: '🦅', name: 'Eagle', color: '#8b4513' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'starlight-princess': buildTheme(
+    { id: 'starlight-princess', title: 'Starlight Princess', accent: '#FF69B4' },
+    [
+      { id: 'scatter', emoji: '⭐', name: 'Star', type: 'scatter', color: '#ffd700' },
+      { id: 'wild',    emoji: '👸', name: 'Princess Wild', type: 'wild', color: '#ff69b4', multiplier: 2 },
+      { id: 'seven',   emoji: '👑', name: 'Crown', color: '#ff1493' },
+      { id: 'bar',     emoji: '💫', name: 'Sparkle', color: '#da70d6' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'sweet-bonanza': buildTheme(
+    { id: 'sweet-bonanza', title: 'Sweet Bonanza', accent: '#FF69B4' },
+    [
+      { id: 'scatter', emoji: '🍬', name: 'Candy Scatter', type: 'scatter', color: '#ff1493' },
+      { id: 'wild',    emoji: '🍭', name: 'Lollipop Wild', type: 'wild', color: '#ff69b4', multiplier: 2 },
+      { id: 'seven',   emoji: '🎂', name: 'Cake', color: '#ffdab9' },
+      { id: 'bar',     emoji: '🍩', name: 'Donut', color: '#d2691e' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'wild-bandito': buildTheme(
+    { id: 'wild-bandito', title: 'Wild Bandito', accent: '#D2691E' },
+    [
+      { id: 'scatter', emoji: '💰', name: 'Money Bag', type: 'scatter', color: '#ffd700' },
+      { id: 'wild',    emoji: '🤠', name: 'Bandito Wild', type: 'wild', color: '#ffa500', multiplier: 2 },
+      { id: 'seven',   emoji: '🌵', name: 'Cactus', color: '#228b22' },
+      { id: 'bar',     emoji: '🪣', name: 'Gold Pan', color: '#daa520' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'mahjong-ways': buildTheme(
+    { id: 'mahjong-ways', title: 'Mahjong Ways', accent: '#DC143C' },
+    [
+      { id: 'scatter', emoji: '🎴', name: 'Mahjong Tile', type: 'scatter', color: '#00ff00' },
+      { id: 'wild',    emoji: '🀄', name: 'Red Dragon', type: 'wild', color: '#ff0000', multiplier: 2 },
+      { id: 'seven',   emoji: '🀇', name: 'Character One', color: '#0000ff' },
+      { id: 'bar',     emoji: '🀙', name: 'Bamboo One', color: '#008000' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'mahjong-ways-2': buildTheme(
+    { id: 'mahjong-ways-2', title: 'Mahjong Ways 2', accent: '#DC143C' },
+    [
+      { id: 'scatter', emoji: '🎴', name: 'Golden Tile', type: 'scatter', color: '#ffd700' },
+      { id: 'wild',    emoji: '🀄', name: 'Red Dragon', type: 'wild', color: '#ff0000', multiplier: 2 },
+      { id: 'seven',   emoji: '🀇', name: 'Character Wan', color: '#0000ff' },
+      { id: 'bar',     emoji: '🀙', name: 'Bamboo Suo', color: '#228b22' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'dragon-legend': buildTheme(
+    { id: 'dragon-legend', title: 'Dragon Legend', accent: '#FF4500' },
+    [
+      { id: 'scatter', emoji: '🥚', name: 'Dragon Egg', type: 'scatter', color: '#ffd700' },
+      { id: 'wild',    emoji: '🐉', name: 'Dragon Wild', type: 'wild', color: '#ff4500', multiplier: 2 },
+      { id: 'seven',   emoji: '🐲', name: 'Fire Dragon', color: '#ff0000' },
+      { id: 'bar',     emoji: '🔥', name: 'Flame', color: '#ff6347' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'lucky-neko': buildTheme(
+    { id: 'lucky-neko', title: 'Lucky Neko', accent: '#FF69B4' },
+    [
+      { id: 'scatter', emoji: '🐟', name: 'Fish', type: 'scatter', color: '#ffa500' },
+      { id: 'wild',    emoji: '🐱', name: 'Lucky Cat Wild', type: 'wild', color: '#ff69b4', multiplier: 2 },
+      { id: 'seven',   emoji: '😺', name: 'Golden Neko', color: '#ffd700' },
+      { id: 'bar',     emoji: '🎁', name: 'Gift Box', color: '#ff0000' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'bali-vacation': buildTheme(
+    { id: 'bali-vacation', title: 'Bali Vacation', accent: '#00CED1' },
+    [
+      { id: 'scatter', emoji: '🌺', name: 'Hibiscus', type: 'scatter', color: '#ff1493' },
+      { id: 'wild',    emoji: '🏝️', name: 'Island Wild', type: 'wild', color: '#00ced1', multiplier: 2 },
+      { id: 'seven',   emoji: '🌴', name: 'Palm Tree', color: '#228b22' },
+      { id: 'bar',     emoji: '🏄', name: 'Surfboard', color: '#1e90ff' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'caishen-wins': buildTheme(
+    { id: 'caishen-wins', title: 'Caishen Wins', accent: '#FF0000' },
+    [
+      { id: 'scatter', emoji: '💰', name: 'Gold Ingot', type: 'scatter', color: '#ffd700' },
+      { id: 'wild',    emoji: '🧧', name: 'Caishen Wild', type: 'wild', color: '#ff0000', multiplier: 2 },
+      { id: 'seven',   emoji: '🏮', name: 'Lantern', color: '#ff4500' },
+      { id: 'bar',     emoji: '💎', name: 'Jade', color: '#00ced1' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'double-fortune': buildTheme(
+    { id: 'double-fortune', title: 'Double Fortune', accent: '#FF1493' },
+    [
+      { id: 'scatter', emoji: '💎', name: 'Jewel', type: 'scatter', color: '#ff1493' },
+      { id: 'wild',    emoji: '🎎', name: 'Double Wild', type: 'wild', color: '#ff69b4', multiplier: 2 },
+      { id: 'seven',   emoji: '❤️', name: 'Heart', color: '#dc143c' },
+      { id: 'bar',     emoji: '🪭', name: 'Double Fan', color: '#ff4500' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'gem-saviour': buildTheme(
+    { id: 'gem-saviour', title: 'Gem Saviour', accent: '#9370DB' },
+    [
+      { id: 'scatter', emoji: '💎', name: 'Emerald', type: 'scatter', color: '#00ff7f' },
+      { id: 'wild',    emoji: '⚔️', name: 'Sword Wild', type: 'wild', color: '#4169e1', multiplier: 2 },
+      { id: 'seven',   emoji: '🔮', name: 'Crystal', color: '#9400d3' },
+      { id: 'bar',     emoji: '🛡️', name: 'Shield', color: '#c0c0c0' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
+
+  'dragon-fortune': buildTheme(
+    { id: 'dragon-fortune', title: 'Dragon Fortune', accent: '#FF4500' },
+    [
+      { id: 'scatter', emoji: '🥚', name: 'Dragon Egg', type: 'scatter', color: '#ffd700' },
+      { id: 'wild',    emoji: '🐉', name: 'Dragon Wild', type: 'wild', color: '#ff0000', multiplier: 2 },
+      { id: 'seven',   emoji: '💎', name: 'Blue Orb', color: '#4169e1' },
+      { id: 'bar',     emoji: '🔥', name: 'Fire', color: '#ff4500' },
+      { id: 'ace',     emoji: 'A', name: 'Ace', card: true, color: '#e0e0f0' },
+      { id: 'king',    emoji: 'K', name: 'King', card: true, color: '#e0e0f0' },
+      { id: 'queen',   emoji: 'Q', name: 'Queen', card: true, color: '#e0e0f0' },
+      { id: 'jack',    emoji: 'J', name: 'Jack', card: true, color: '#e0e0f0' },
+    ]
+  ),
 };
 
+// Default theme for unknown games
+const DEFAULT_THEME = THEMES['fortune-tiger'];
+
+function getTheme(themeId) {
+  return THEMES[themeId] || DEFAULT_THEME;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Core engine
+// ─────────────────────────────────────────────────────────────────────────────
 class GameEngine {
-  constructor(config = DEFAULT_CONFIG, gameSettings = {}) {
-    this.config = config;
+  constructor(config, gameSettings = {}) {
+    // config can be a theme object or { symbols, theme } where theme is the themeId
+    this.theme = config?.symbols ? getTheme(config.theme || 'fortune-tiger') : getTheme(config || 'fortune-tiger');
     this.rng = new SecureRNG();
+
     // Admin control settings
     this.settings = {
-      winRate: gameSettings.win_rate !== undefined ? gameSettings.win_rate : 25,
-      forceOutcome: gameSettings.force_outcome !== undefined ? gameSettings.force_outcome : null,
-      minPayout: gameSettings.min_payout !== undefined ? gameSettings.min_payout : 0,
-      maxPayout: gameSettings.max_payout !== undefined ? gameSettings.max_payout : 30,
-      rtpTarget: gameSettings.rtp !== undefined ? gameSettings.rtp : 92,
+      winRate: gameSettings.win_rate ?? 25,
+      forceOutcome: gameSettings.force_outcome ?? null,
+      minPayout: gameSettings.min_payout ?? 0,
+      maxPayout: gameSettings.max_payout ?? 30,
+      rtpTarget: gameSettings.rtp ?? 92,
       playerClass: gameSettings.player_class || 'normal',
       dryRun: gameSettings.dry_run || false,
-      payoutCap: gameSettings.payout_cap !== undefined ? gameSettings.payout_cap : 0,
+      payoutCap: gameSettings.payout_cap ?? 0,
     };
   }
 
-  // Get symbol weights based on player class and settings
-  getAdjustedWeights() {
-    const weights = {};
-    const multiplier = this.settings.playerClass === 'vip' ? 1.5 : 
-                       this.settings.playerClass === 'low' ? 0.7 : 1;
-    
-    this.config.symbols.forEach(s => {
-      if (s.isWild || s.isScatter) {
-        weights[s.id] = s.weight * multiplier;
-      } else if (s.payout[5] > 100) {
-        // High value symbols
-        weights[s.id] = s.weight * multiplier;
-      } else {
-        weights[s.id] = s.weight;
-      }
-    });
-    
-    return weights;
+  // Weighted random symbol selection
+  randomSymbol() {
+    const weights = this.theme.weights;
+    const order = this.theme.order;
+    const total = order.reduce((sum, id) => sum + weights[id], 0);
+    let r = this.rng.generate(1, total);
+    for (const id of order) {
+      r -= weights[id];
+      if (r <= 0) return id;
+    }
+    return order[order.length - 1];
   }
 
-  // Generate weighted random symbol with admin controls
-  getRandomSymbol(forceWin = false) {
-    const symbols = this.config.symbols;
-    
-    // If forcing win, bias towards high-value symbols (3-of-a-kind payout >= 5)
-    if (forceWin) {
-      const winSymbols = symbols.filter(s => !s.isScatter && s.payout && (s.payout[3] || 0) >= 5);
-      if (winSymbols.length === 0) return symbols.find(s => s.id === 'seven') || symbols[0];
-      return winSymbols[this.rng.generate(0, winSymbols.length - 1)];
+  // Generate 5x3 reel grid
+  spinReels() {
+    const reels = [];
+    for (let c = 0; c < 5; c++) {
+      reels.push([this.randomSymbol(), this.randomSymbol(), this.randomSymbol()]);
     }
-    
-    const weights = this.getAdjustedWeights();
-    const totalWeight = Object.values(weights).reduce((sum, w) => sum + w, 0);
-    let random = this.rng.generate(1, totalWeight);
-    
-    for (const symbol of symbols) {
-      random -= weights[symbol.id];
-      if (random <= 0) return symbol;
-    }
-    return symbols[symbols.length - 1];
+    return reels;
   }
 
-  // Generate reel grid with potential forced outcome
-  generateReels(forceWin = false) {
-    const grid = [];
-    for (let reel = 0; reel < this.config.reels; reel++) {
-      const column = [];
-      for (let row = 0; row < this.config.rows; row++) {
-        column.push(this.getRandomSymbol(forceWin));
-      }
-      grid.push(column);
-    }
-    return grid;
+  // Generate winning grid (force match on center line)
+  generateWinningGrid() {
+    const reels = this.spinReels();
+    const winSymbol = this.theme.order[2] || this.theme.order[0]; // mid-tier symbol
+    for (let i = 0; i < 5; i++) reels[i][1] = winSymbol;
+    return reels;
   }
 
-  // Generate guaranteed winning grid
-  generateWinningGrid(betAmount) {
-    const grid = this.generateReels(true);
-    
-    // Force a winning payline (middle line)
-    const winSymbol = this.config.symbols.find(s => s.payout[5] && !s.isWild && !s.isScatter);
-    for (let reel = 0; reel < 5; reel++) {
-      grid[reel][1] = winSymbol;
-    }
-    
-    return { grid, forcedSymbol: winSymbol };
-  }
-
-  // Generate guaranteed losing grid — verified against all paylines
+  // Generate losing grid (no 3+ matches on center line, no scatters)
   generateLosingGrid() {
-    const lowSymbols = this.config.symbols.filter(s =>
-      !s.isWild && !s.isScatter
-    );
-    // Ensure we have enough distinct symbols to break paylines
-    const distinctSymbols = [...new Set(lowSymbols.map(s => s.id))].map(id => lowSymbols.find(s => s.id === id));
-    if (distinctSymbols.length < 2) return this.generateReels(false);
-
-    let attempts = 0;
-    while (attempts < 50) {
-      attempts++;
-      const grid = [];
-      for (let reel = 0; reel < this.config.reels; reel++) {
-        const column = [];
-        for (let row = 0; row < this.config.rows; row++) {
-          column.push(lowSymbols[this.rng.generate(0, lowSymbols.length - 1)]);
-        }
-        grid.push(column);
-      }
-      // Break any accidental 3+ matches on all paylines
-      for (const payline of this.config.paylines) {
-        const lineSymbols = payline.map((row, col) => grid[col][row]);
-        const first = lineSymbols[0];
-        let matchCount = 0;
-        for (const sym of lineSymbols) {
-          if (sym.id === first.id || sym.isWild) matchCount++;
-          else break;
-        }
-        if (matchCount >= 3) {
-          // Replace reel 2 symbol on this payline with a different symbol
-          const row2 = payline[2];
-          const current = grid[2][row2];
-          const alt = distinctSymbols.find(s => s.id !== first.id && s.id !== current.id);
-          if (alt) grid[2][row2] = alt;
-        }
-      }
-      // Verify no wins remain
-      const wins = this.evaluatePaylines(grid);
-      if (wins.length === 0) return grid;
+    const order = this.theme.order.filter(id => id !== this.theme.scatterId);
+    const reels = [];
+    for (let c = 0; c < 5; c++) {
+      // Alternate symbols to break any matches
+      reels.push([
+        order[(c) % order.length],
+        order[(c + 1) % order.length],
+        order[(c + 2) % order.length],
+      ]);
     }
-    // Fallback: force all different symbols per reel
-    const grid = [];
-    for (let reel = 0; reel < this.config.reels; reel++) {
-      const column = [];
-      for (let row = 0; row < this.config.rows; row++) {
-        column.push(distinctSymbols[(reel + row + 1) % distinctSymbols.length]);
-      }
-      grid.push(column);
-    }
-    return grid;
+    return reels;
   }
 
-  // Evaluate paylines
-  evaluatePaylines(grid) {
-    const wins = [];
-    const wildSymbol = this.config.symbols.find(s => s.isWild);
+  // Evaluate win: center line + scatter payout
+  evaluateWin(reels, bet) {
+    const { payouts, scatterId } = this.theme;
 
-    for (let i = 0; i < this.config.paylines.length; i++) {
-      const payline = this.config.paylines[i];
-      const lineSymbols = payline.map((row, col) => grid[col][row]);
-      const firstNonWild = lineSymbols.find(s => !s.isWild);
-      
-      if (!firstNonWild) {
-        wins.push({ payline: i, symbol: wildSymbol.id, count: 5, payout: wildSymbol.payout[5] || 0 });
-        continue;
-      }
-
-      let count = 0;
-      for (const sym of lineSymbols) {
-        if (sym.id === firstNonWild.id || sym.isWild) count++;
-        else break;
-      }
-
-      if (count >= 3 && firstNonWild.payout && firstNonWild.payout[count]) {
-        wins.push({ payline: i, symbol: firstNonWild.id, count, payout: firstNonWild.payout[count] });
-      }
-    }
-    return wins;
-  }
-
-  // Detect scatters
-  detectScatters(grid) {
+    // Center line win
+    const centerLine = reels.map(col => col[1]);
+    let lineWin = 0;
+    let winSymbol = null;
     let count = 0;
-    const positions = [];
-    for (let col = 0; col < grid.length; col++) {
-      for (let row = 0; row < grid[col].length; row++) {
-        if (grid[col][row].isScatter) {
-          count++;
-          positions.push({ col, row });
+    const linePositions = [];
+
+    const first = centerLine[0];
+    if (first && first !== scatterId) {
+      let c = 0;
+      for (let i = 0; i < 5; i++) {
+        if (centerLine[i] === first) {
+          c++;
+          linePositions.push([i, 1]);
+        } else break;
+      }
+      if (c >= 3 && payouts[first]?.[c]) {
+        lineWin = payouts[first][c] * bet;
+        winSymbol = first;
+        count = c;
+      }
+    }
+
+    // Scatter count
+    let scatterCount = 0;
+    const scatterPositions = [];
+    for (let c = 0; c < 5; c++) {
+      for (let r = 0; r < 3; r++) {
+        if (reels[c][r] === scatterId) {
+          scatterCount++;
+          scatterPositions.push([c, r]);
         }
       }
     }
-    return { count, positions };
-  }
 
-  // Calculate win based on RTP enforcement
-  calculateEnforcedWin(betAmount) {
-    // Base win calculation
-    const baseWin = betAmount * (this.settings.rtpTarget / 100);
-    // Add variance (±30%)
-    const variance = this.rng.generate(70, 130) / 100;
-    return Math.max(0, baseWin * variance);
-  }
-
-  // Main spin function with admin controls
-  // forcedGrid: optional pre-built grid (used by createForcedOutcome / admin triggers)
-  spin(betAmount, isFreeSpin = false, sessionStats = { totalBet: 0, totalWin: 0, spins: 0 }, forcedGrid = null) {
-    const seed = this.rng.generateSeed();
-    let grid, forcedOutcome = false;
-
-    // If a grid was pre-built (admin force / createForcedOutcome), use it
-    if (forcedGrid) {
-      grid = forcedGrid;
-      forcedOutcome = 'admin_forced';
+    let scatterWin = 0;
+    let freeSpins = 0;
+    if (scatterCount >= 3 && payouts[scatterId]) {
+      scatterWin = (payouts[scatterId][Math.min(scatterCount, 5)] || 0) * bet;
+      freeSpins = 10;
     }
-    // Check payout cap
-    else if (this.settings.payoutCap > 0 && sessionStats.totalWin >= this.settings.payoutCap) {
-      // Force loss after cap reached
-      grid = this.generateLosingGrid();
+
+    return {
+      lineWin,
+      winSymbol,
+      count,
+      linePositions,
+      scatterWin,
+      scatterCount,
+      scatterPositions,
+      freeSpins,
+      totalWin: lineWin + scatterWin,
+    };
+  }
+
+  // Main spin entry point
+  spin(betAmount, isFreeSpin = false, sessionStats = { totalBet: 0, totalWin: 0, spins: 0 }) {
+    const seed = this.rng.generateSeed();
+    let reels;
+    let forcedOutcome = null;
+
+    const isForceLoss = this.settings.forceOutcome === 'loss';
+    const isForceWin = this.settings.forceOutcome === 'win' || this.settings.forceOutcome === 'big_win';
+    const isForceJackpot = this.settings.forceOutcome === 'jackpot';
+
+    // Payout cap check
+    if (this.settings.payoutCap > 0 && sessionStats.totalWin >= this.settings.payoutCap) {
+      reels = this.generateLosingGrid();
       forcedOutcome = 'loss_cap';
     }
-    // Check forced outcome from admin
-    else if (this.settings.forceOutcome === 'win' || this.settings.forceOutcome === 'big_win') {
-      const result = this.generateWinningGrid(betAmount);
-      grid = result.grid;
-      // For big_win, force 5-of-a-kind on middle line with high-value symbol
-      if (this.settings.forceOutcome === 'big_win') {
-        const seven = this.config.symbols.find(s => s.id === 'seven') || result.forcedSymbol;
-        for (let reel = 0; reel < 5; reel++) {
-          grid[reel][1] = seven;
-        }
-      }
+    // Forced outcomes
+    else if (isForceWin) {
+      reels = this.generateWinningGrid();
       forcedOutcome = this.settings.forceOutcome === 'big_win' ? 'big_win_forced' : 'win_forced';
     }
-    else if (this.settings.forceOutcome === 'loss') {
-      grid = this.generateLosingGrid();
+    else if (isForceLoss) {
+      reels = this.generateLosingGrid();
       forcedOutcome = 'loss_forced';
     }
-    else if (this.settings.forceOutcome === 'jackpot') {
-      // Force jackpot symbols (all wilds)
-      grid = this.generateReels(true);
-      const wild = this.config.symbols.find(s => s.isWild);
-      for (let reel = 0; reel < 5; reel++) {
-        for (let row = 0; row < 3; row++) {
-          grid[reel][row] = wild;
-        }
-      }
+    else if (isForceJackpot) {
+      reels = this.spinReels();
+      // Fill with wilds on center line
+      for (let i = 0; i < 5; i++) reels[i][1] = this.theme.wildId || this.theme.order[1];
       forcedOutcome = 'jackpot_forced';
     }
     // Win rate control
-    else if (!isFreeSpin) {
+    else {
       const winRoll = this.rng.generate(1, 100);
-      
       if (winRoll <= this.settings.winRate) {
-        // Should win - bias towards winning grid
-        const shouldForceWin = this.rng.generate(1, 100) <= 60;
-        if (shouldForceWin) {
-          const result = this.generateWinningGrid(betAmount);
-          grid = result.grid;
-          forcedOutcome = 'win_biased';
-        } else {
-          grid = this.generateReels(true);
-        }
+        reels = this.settings.playerClass === 'vip' ? this.generateWinningGrid() : this.spinReels();
       } else {
-        // Should lose - generate guaranteed losing grid
-        grid = this.generateLosingGrid();
-      }
-    } else {
-      grid = this.generateReels(this.settings.playerClass === 'vip');
-    }
-
-    const paylineWins = this.evaluatePaylines(grid);
-    const scatters = this.detectScatters(grid);
-
-    // If forced loss, zero out any accidental wins from the grid
-    const isForceLoss = forcedOutcome === 'loss_forced' || forcedOutcome === 'loss_cap';
-
-    let totalWin = isForceLoss ? 0 : paylineWins.reduce((sum, w) => sum + (w.payout * betAmount), 0);
-    let freeSpinsAwarded = 0;
-
-    // Apply min/max payout limits
-    if (totalWin > 0) {
-      const payoutMultiplier = totalWin / betAmount;
-      if (payoutMultiplier < this.settings.minPayout) {
-        totalWin = betAmount * this.settings.minPayout;
-      }
-      if (this.settings.maxPayout > 0 && payoutMultiplier > this.settings.maxPayout) {
-        totalWin = betAmount * this.settings.maxPayout;
+        reels = this.generateLosingGrid();
       }
     }
 
-    // Scatter wins — suppressed on forced loss
-    const scatterSymbol = this.config.symbols.find(s => s.isScatter);
-    if (!isForceLoss && scatters.count >= 3 && scatterSymbol?.payout[scatters.count]) {
-      totalWin += scatterSymbol.payout[scatters.count] * betAmount;
-      freeSpinsAwarded = this.config.freeSpinsAwarded;
+    // Evaluate
+    const result = this.evaluateWin(reels, betAmount);
+
+    // Zero out wins on forced loss
+    if (forcedOutcome === 'loss_forced' || forcedOutcome === 'loss_cap') {
+      result.lineWin = 0;
+      result.scatterWin = 0;
+      result.totalWin = 0;
+      result.freeSpins = 0;
+    }
+
+    // Apply min/max payout bounds
+    if (result.totalWin > 0) {
+      const mult = result.totalWin / betAmount;
+      if (mult < this.settings.minPayout) result.totalWin = betAmount * this.settings.minPayout;
+      if (this.settings.maxPayout > 0 && mult > this.settings.maxPayout) result.totalWin = betAmount * this.settings.maxPayout;
     }
 
     // Free spin multiplier
-    if (isFreeSpin) {
-      totalWin *= this.config.bonusMultiplier;
+    if (isFreeSpin) result.totalWin *= 2;
+
+    // VIP bonus
+    if (this.settings.playerClass === 'vip' && result.totalWin > 0) {
+      result.totalWin *= 1.1;
     }
 
-    // Player class bonus
-    if (this.settings.playerClass === 'vip' && totalWin > 0) {
-      totalWin *= 1.1; // 10% VIP bonus
-    }
+    result.totalWin = parseFloat(result.totalWin.toFixed(2));
 
     // Jackpot contribution
-    const jackpotContribution = betAmount * this.config.jackpotContribution;
-
-    // Round to 2 decimals
-    totalWin = parseFloat(totalWin.toFixed(2));
+    const jackpotContribution = betAmount * 0.01;
 
     return {
       seed,
-      grid: grid.map(col => col.map(s => ({ id: s.id, name: s.name }))),
-      paylineWins,
-      scatters,
-      totalWin,
-      freeSpinsAwarded,
-      bonusTriggered: freeSpinsAwarded > 0,
+      grid: reels.map(col => col.map(id => ({ id, name: this.theme.symbols[id]?.name || id }))),
+      paylineWins: result.lineWin > 0 ? [{ payline: 0, symbol: result.winSymbol, count: result.count, payout: result.lineWin / betAmount }] : [],
+      scatters: { count: result.scatterCount, positions: result.scatterPositions },
+      totalWin: result.totalWin,
+      freeSpinsAwarded: result.freeSpins,
+      bonusTriggered: result.freeSpins > 0,
       jackpotContribution,
       isFreeSpin,
       betAmount,
       forcedOutcome,
       playerClass: this.settings.playerClass,
-      dryRun: this.settings.dryRun
+      dryRun: this.settings.dryRun,
     };
   }
 
-  // Check jackpot win
   checkJackpot(currentJackpot) {
-    // VIP players have 2x jackpot chance
-    const jackpotOdds = this.settings.playerClass === 'vip' ? 50000 : 100000;
-    const roll = this.rng.generate(1, jackpotOdds);
-    return roll === 1 ? currentJackpot : 0;
-  }
-
-  // Force specific outcome (admin control)
-  // Returns a full spin result with the intended grid actually applied
-  static createForcedOutcome(type, betAmount) {
-    const engine = new GameEngine(DEFAULT_CONFIG);
-    let grid;
-    
-    switch (type) {
-      case 'big_win': {
-        grid = engine.generateReels(true);
-        const seven = DEFAULT_CONFIG.symbols.find(s => s.id === 'seven');
-        for (let i = 0; i < 5; i++) grid[i][1] = seven;
-        break;
-      }
-      case 'jackpot': {
-        grid = engine.generateReels(true);
-        const wild = DEFAULT_CONFIG.symbols.find(s => s.isWild);
-        for (let i = 0; i < 5; i++) {
-          for (let j = 0; j < 3; j++) {
-            grid[i][j] = wild;
-          }
-        }
-        break;
-      }
-      case 'loss':
-        grid = engine.generateLosingGrid();
-        break;
-      default:
-        grid = engine.generateReels(false);
-    }
-    
-    // Pass the prepared grid so spin does not regenerate it
-    return engine.spin(betAmount, false, { totalBet: 0, totalWin: 0, spins: 0 }, grid);
+    const odds = this.settings.playerClass === 'vip' ? 50000 : 100000;
+    return this.rng.generate(1, odds) === 1 ? currentJackpot : 0;
   }
 }
 
-module.exports = { GameEngine, SecureRNG, DEFAULT_CONFIG };
+module.exports = { GameEngine, SecureRNG, THEMES, getTheme, buildTheme, PAYOUT_VALUES, WEIGHT_VALUES };
