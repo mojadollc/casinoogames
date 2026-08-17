@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { gameAPI, walletAPI } from '../../services/api';
-import SlotSymbol from '../../components/slots/SlotSymbols';
 import PixiSlotReels from '../../components/slots/PixiSlotReels';
 
 // Game-specific themed symbol sets

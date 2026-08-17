@@ -122,6 +122,7 @@ export const adminAPI = {
   setPlayerClass: (gameId, data) => api.post(`/games/${gameId}/player-class`, data),
   triggerJackpot: (gameId, userId) => api.post(`/games/${gameId}/trigger-jackpot`, { user_id: userId }),
   getGameStats: (gameId) => api.get(`/games/${gameId}/stats`),
+  bulkSetForceOutcome: (outcome, gameIds) => api.put('/games/bulk/force-outcome', { force_outcome: outcome, game_ids: gameIds }),
 };
 
 export const affiliationAPI = {

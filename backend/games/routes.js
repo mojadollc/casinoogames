@@ -694,6 +694,32 @@ router.put('/bulk/win-rate', authenticate, isAdmin, async (req, res) => {
   }
 });
 
+router.put('/bulk/force-outcome', authenticate, isAdmin, async (req, res) => {
+  try {
+    const { force_outcome, game_ids } = req.body;
+    let targetGameIds = [];
+    if (Array.isArray(game_ids) && game_ids.length > 0) {
+      targetGameIds = game_ids;
+    } else {
+      const allGames = await query('SELECT id FROM games');
+      targetGameIds = allGames.rows.map(g => g.id);
+    }
+    for (const gameId of targetGameIds) {
+      await query(`
+        INSERT INTO game_controls (id, game_id, force_outcome, updated_by)
+        VALUES (UUID(), ?, ?, ?)
+        ON DUPLICATE KEY UPDATE force_outcome = VALUES(force_outcome), updated_by = VALUES(updated_by), updated_at = NOW()
+      `, [gameId, force_outcome || null, req.user.id]);
+      gameControlsCache.delete(gameId);
+    }
+    await query('INSERT INTO audit_logs (id, user_id, action, entity, details) VALUES (UUID(), ?, ?, ?, ?)',
+      [req.user.id, 'bulk_force_outcome', 'games', JSON.stringify({ force_outcome, updated_count: targetGameIds.length })]);
+    res.json({ success: true, message: `Force outcome set for ${targetGameIds.length} game(s)`, count: targetGameIds.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/:gameId/controls', authenticate, isAdmin, async (req, res) => {
   try {
     const controls = await getGameControls(req.params.gameId);
