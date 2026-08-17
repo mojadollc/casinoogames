@@ -146,18 +146,12 @@ router.post('/:gameId/spin', authenticate, async (req, res) => {
       await debitWallet(req.user.id, betAmount, 'bet', `Bet on ${g.name}`, gameId);
     }
 
-    // Parse config if stored as JSON string; only use custom config when it has symbols
-    let engineConfig;
-    try {
-      const rawConfig = typeof g.config === 'string' ? JSON.parse(g.config) : g.config;
-      engineConfig = rawConfig?.symbols ? rawConfig : undefined;
-    } catch {
-      engineConfig = undefined;
-    }
+    // Use game slug as theme ID for the new themeable engine
+    const themeId = g.slug || 'fortune-tiger';
 
     let result;
     try {
-      const engine = new GameEngine(engineConfig, gameSettings);
+      const engine = new GameEngine(themeId, gameSettings);
       result = engine.spin(betAmount, false, {
         totalBet: parseFloat(stats.total_bet) || 0,
         totalWin: parseFloat(stats.total_win) || 0,
@@ -176,7 +170,7 @@ router.post('/:gameId/spin', authenticate, async (req, res) => {
     }
 
     // Re-create engine reference for jackpot check (same settings)
-    const engine = new GameEngine(engineConfig, gameSettings);
+    const engine = new GameEngine(themeId, gameSettings);
 
     // Jackpot
     const jackpot = await query("SELECT * FROM jackpots WHERE game_id = ? AND status = 'active'", [gameId]);
@@ -258,7 +252,8 @@ router.post('/:gameId/free-spin', authenticate, async (req, res) => {
       payout_cap: controls.payout_cap
     };
 
-    const engine = new GameEngine(game.rows[0].config?.symbols ? game.rows[0].config : undefined, gameSettings);
+    const themeId = game.rows[0].slug || 'fortune-tiger';
+    const engine = new GameEngine(themeId, gameSettings);
     const result = engine.spin(game.rows[0].min_bet, true);
 
     if (result.totalWin > 0) {
