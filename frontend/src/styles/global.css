@@ -1125,6 +1125,41 @@ th {
   z-index: 9999;
 }
 
+/* ── Reel Components ─────────────────────────────────── */
+.tile-base {
+  width: 100%;
+  flex-shrink: 0;
+  position: relative;
+}
+
+@keyframes reelScroll {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-60px); }
+}
+
+.reel-spinning {
+  animation: reelScroll 0.12s linear infinite;
+}
+
+@keyframes reelLand {
+  0%   { transform: translateY(-20px); opacity: 0.6; }
+  60%  { transform: translateY(4px); }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+.animate-reelland {
+  animation: reelLand 0.35s ease-out;
+}
+
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(253,224,71,0.6); }
+  50%       { box-shadow: 0 0 20px rgba(253,224,71,1); }
+}
+
+.animate-glow {
+  animation: glow 0.6s ease-in-out infinite;
+}
+
 /* ── Shimmer Skeleton ─────────────────────────────────── */
 @keyframes skeleton-shimmer {
   0%   { background-position: -400px 0; }

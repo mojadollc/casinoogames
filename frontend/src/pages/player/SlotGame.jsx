@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { gameAPI, walletAPI } from '../../services/api';
-import ModernSlotReels from '../../components/slots/ModernSlotReels';
-import { getThemeForGame } from '../../data/gameThemes';
+import Reels from '../../components/slots/Reels';
+import { getThemeForGame, spinReels } from '../../data/gameThemes';
 import useSlotSounds from '../../components/slots/useSlotSounds';
 
 export default function SlotGame() {
@@ -19,8 +19,11 @@ export default function SlotGame() {
   const [message, setMessage] = useState('');
   const [showPaytable, setShowPaytable] = useState(false);
   const [autoSpin, setAutoSpin] = useState(false);
-  
+  const [highlightPositions, setHighlightPositions] = useState([]);
+
   const theme = getThemeForGame(slug);
+  const [reels, setReels] = useState(() => spinReels(theme));
+  const [spinningReels, setSpinningReels] = useState([false, false, false, false, false]);
   const symbols = theme?.symbols || {};
   const accentColor = theme?.accent || '#FFD700';
 
@@ -43,53 +46,84 @@ export default function SlotGame() {
     if (spinning || balance < bet || !game) return;
     
     setSpinning(true);
+    setSpinningReels([true, true, true, true, true]);
+    setHighlightPositions([]);
     setMessage('');
     setLastWin(0);
     playSound('spin');
 
     try {
       const { data } = await gameAPI.spin(game.id, bet);
-      
-      setBalance(data.balance ?? balance - bet + (data.totalWin || 0));
-      setLastWin(data.totalWin || 0);
 
-      if (data.totalWin > 0) {
-        playSound(data.totalWin >= bet * 15 ? 'bigwin' : 'win');
-        setMessage(`Win ₱${data.totalWin.toLocaleString()}`);
-      }
+      // Stagger reel stops (200ms apart), then apply result
+      const gridReels = data.grid
+        ? data.grid.map(col => col.map(s => s.id))
+        : spinReels(theme);
 
-      if (data.freeSpinsAwarded > 0) {
-        setFreeSpins(prev => prev + data.freeSpinsAwarded);
-        playSound('scatter');
-        setMessage(`+${data.freeSpinsAwarded} Free Spins!`);
-      }
+      [0, 1, 2, 3, 4].forEach(i => {
+        setTimeout(() => {
+          setSpinningReels(prev => prev.map((v, j) => j === i ? false : v));
+          if (i === 4) {
+            setReels(gridReels);
+            setSpinning(false);
+            setBalance(data.balance ?? balance - bet + (data.totalWin || 0));
+            setLastWin(data.totalWin || 0);
+
+            if (data.totalWin > 0) {
+              playSound(data.totalWin >= bet * 15 ? 'bigwin' : 'win');
+              setMessage(`Win ₱${data.totalWin.toLocaleString()}`);
+              if (data.linePositions) setHighlightPositions(data.linePositions);
+            }
+            if (data.freeSpinsAwarded > 0) {
+              setFreeSpins(prev => prev + data.freeSpinsAwarded);
+              playSound('scatter');
+              setMessage(`+${data.freeSpinsAwarded} Free Spins!`);
+            }
+          }
+        }, i * 220 + 400);
+      });
     } catch (err) {
+      setSpinningReels([false, false, false, false, false]);
+      setSpinning(false);
       setMessage(err.response?.data?.error || 'Spin failed');
     }
-
-    setTimeout(() => setSpinning(false), 1800);
   };
 
   const useFreeSpin = async () => {
     if (spinning || freeSpins <= 0 || !game) return;
     
     setSpinning(true);
+    setSpinningReels([true, true, true, true, true]);
+    setHighlightPositions([]);
     setFreeSpins(prev => prev - 1);
     playSound('spin');
 
     try {
       const { data } = await gameAPI.freeSpin(game.id);
-      setBalance(data.balance ?? balance);
-      setLastWin(data.totalWin || 0);
-      if (data.totalWin > 0) {
-        playSound('win');
-        setMessage(`Free Spin Win ₱${data.totalWin.toLocaleString()}`);
-      }
+      const gridReels = data.grid
+        ? data.grid.map(col => col.map(s => s.id))
+        : spinReels(theme);
+
+      [0, 1, 2, 3, 4].forEach(i => {
+        setTimeout(() => {
+          setSpinningReels(prev => prev.map((v, j) => j === i ? false : v));
+          if (i === 4) {
+            setReels(gridReels);
+            setSpinning(false);
+            setBalance(data.balance ?? balance);
+            setLastWin(data.totalWin || 0);
+            if (data.totalWin > 0) {
+              playSound('win');
+              setMessage(`Free Spin Win ₱${data.totalWin.toLocaleString()}`);
+            }
+          }
+        }, i * 220 + 400);
+      });
     } catch (err) {
+      setSpinningReels([false, false, false, false, false]);
+      setSpinning(false);
       setMessage(err.response?.data?.error || 'Free spin failed');
     }
-
-    setTimeout(() => setSpinning(false), 1800);
   };
 
   if (!game) return <div className="loading"><div className="spinner" /></div>;
@@ -183,11 +217,11 @@ export default function SlotGame() {
         boxShadow: `inset 0 0 30px rgba(0,0,0,0.5), 0 0 20px ${accentColor}15`,
         padding: '10px',
       }}>
-        <ModernSlotReels
-          spinning={spinning}
+        <Reels
+          reels={reels}
+          spinningReels={spinningReels}
+          highlightPositions={highlightPositions}
           theme={theme}
-          height={340}
-          lastWin={lastWin}
         />
       </div>
 
