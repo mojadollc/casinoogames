@@ -101,45 +101,61 @@ router.get('/dashboard', adminAuth, async (req, res) => {
 // Player management
 router.get('/players', adminAuth, async (req, res) => {
   try {
-    const { search, page = 1, limit = 20 } = req.query;
+    const { search, page = 1, limit = 20, kyc_status, status } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
-    let sql = `SELECT u.id, u.username, u.email, u.phone, u.vip_level, u.kyc_status, u.status, u.created_at,
-      COALESCE(w.balance, 0) as balance
-      FROM users u LEFT JOIN wallets w ON w.user_id = u.id`;
-    const params = [];
-    if (search) {
-      sql += ' WHERE u.username LIKE ? OR u.email LIKE ?';
-      params.push(`%${search}%`, `%${search}%`);
-    }
-    // Exclude admin/superadmin accounts from player list
-    sql += search ? ' AND u.role_id = 1' : ' WHERE u.role_id = 1';
-    sql += ' ORDER BY u.created_at DESC LIMIT ? OFFSET ?';
-    params.push(parseInt(limit), offset);
 
-    const countSql = `SELECT COUNT(*) as total FROM users u WHERE u.role_id = 1${search ? ' AND (u.username LIKE ? OR u.email LIKE ?)' : ''}`;
-    const countParams = search ? [`%${search}%`, `%${search}%`] : [];
+    const conditions = ['u.role_id = 1'];
+    const params = [];
+
+    if (search) {
+      conditions.push('(u.username LIKE ? OR u.email LIKE ? OR u.phone LIKE ? OR u.address LIKE ?)');
+      const s = `%${search}%`;
+      params.push(s, s, s, s);
+    }
+    if (kyc_status) { conditions.push('u.kyc_status = ?'); params.push(kyc_status); }
+    if (status)     { conditions.push('u.status = ?');     params.push(status); }
+
+    const where = 'WHERE ' + conditions.join(' AND ');
 
     const [result, countResult] = await Promise.all([
-      query(sql, params),
-      query(countSql, countParams),
+      query(
+        `SELECT u.id, u.username, u.email, u.phone, u.vip_level, u.kyc_status, u.status,
+                u.created_at, COALESCE(w.balance, 0) AS balance
+         FROM users u LEFT JOIN wallets w ON w.user_id = u.id
+         ${where} ORDER BY u.created_at DESC LIMIT ? OFFSET ?`,
+        [...params, parseInt(limit), offset]
+      ),
+      query(`SELECT COUNT(*) AS total FROM users u ${where}`, params),
     ]);
 
-    // Try to get extra KYC columns if migration 004 ran
     let rows = result.rows;
+
+    // KYC columns from migration 004 — merge if present
     try {
-      const extra = await query(
-        `SELECT id, profile_image, address, kyc_bonus_claimed FROM users WHERE role_id = 1${search ? ' AND (username LIKE ? OR email LIKE ?)' : ''} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-        search ? [`%${search}%`, `%${search}%`, parseInt(limit), offset] : [parseInt(limit), offset]
+      const kyc = await query(
+        `SELECT id, profile_image, address, kyc_bonus_claimed FROM users u ${where} ORDER BY u.created_at DESC LIMIT ? OFFSET ?`,
+        [...params, parseInt(limit), offset]
       );
-      const extraMap = {};
-      extra.rows.forEach(r => { extraMap[r.id] = r; });
-      rows = rows.map(r => ({ ...r, ...extraMap[r.id] }));
-    } catch {} // migration 004 not run yet — skip gracefully
+      const kycMap = {};
+      kyc.rows.forEach(r => { kycMap[r.id] = r; });
+      rows = rows.map(r => ({ ...r, ...kycMap[r.id] }));
+    } catch {} // migration 004 not run yet — skip
+
+    // Geo columns added lazily by geocode endpoint — merge if present
+    try {
+      const geo = await query(
+        `SELECT id, latitude, longitude, geocoded_address, maps_url FROM users u ${where} ORDER BY u.created_at DESC LIMIT ? OFFSET ?`,
+        [...params, parseInt(limit), offset]
+      );
+      const geoMap = {};
+      geo.rows.forEach(r => { geoMap[r.id] = r; });
+      rows = rows.map(r => ({ ...r, ...geoMap[r.id] }));
+    } catch {} // geo columns not yet added — skip
 
     res.json({ players: rows, total: parseInt(countResult.rows[0].total) });
   } catch (err) {
-    console.error('Players error:', err.message);
-    res.status(500).json({ error: 'Failed to load players' });
+    console.error('Players error:', err.message, err.stack);
+    res.status(500).json({ error: 'Failed to load players', detail: err.message });
   }
 });
 
