@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { gameAPI, walletAPI } from '../../services/api';
 import PixiSlotReels from '../../components/slots/PixiSlotReels';
@@ -99,6 +99,13 @@ export default function SlotGame() {
   
   // Responsive height calculation
   const { height: slotHeight, isLandscape, orientation } = useSlotResponsiveHeight(280, 420);
+
+  // Stable callback — must not be recreated on every render or PixiJS will remount
+  const handleLoadingChange = useCallback(({ loading, progress, stage }) => {
+    setIsLoading(loading);
+    setLoadingProgress(progress);
+    setLoadingStage(stage);
+  }, []);
 
   // Cleanup on unmount - cancel autoSpin and clear any pending operations
   useEffect(() => {
@@ -413,11 +420,7 @@ export default function SlotGame() {
               message={message}
               bet={bet}
               height={slotHeight}
-              onLoadingChange={({ loading, progress, stage }) => {
-                setIsLoading(loading);
-                setLoadingProgress(progress);
-                setLoadingStage(stage);
-              }}
+              onLoadingChange={handleLoadingChange}
               onDebugStats={debugMode ? setDebugStats : undefined}
             />
           </div>
