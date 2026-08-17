@@ -51,6 +51,7 @@ export const authAPI = {
 export const walletAPI = {
   balance: () => api.get('/wallet/balance'),
   transactions: (params) => api.get('/wallet/transactions', { params }),
+  summary: () => api.get('/wallet/summary'),
 };
 
 export const paymentAPI = {
@@ -106,6 +107,7 @@ export const adminAPI = {
   createPromotion: (data) => api.post('/admin/promotions', data),
   revenue: (period) => api.get('/admin/reports/revenue', { params: { period } }),
   auditLogs: () => api.get('/admin/audit-logs'),
+  getOnlinePlayers: () => api.get('/admin/online-players'),
   affiliations: (params) => api.get('/affiliation/admin/all', { params }),
   topReferrers: () => api.get('/affiliation/admin/top-referrers'),
   getSettings: () => api.get('/admin/settings'),

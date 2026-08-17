@@ -426,6 +426,30 @@ router.post('/settings/logo', adminAuth, (req, res, next) => {
   }
 });
 
+// Online players by game — last 5 minutes of activity
+router.get('/online-players', authenticate, isAdmin, async (req, res) => {
+  try {
+    const result = await safe(
+      `SELECT g.id AS game_id, g.name AS game_name, g.slug AS game_slug, g.type AS game_type,
+              COUNT(DISTINCT gs.user_id) AS online_players
+       FROM games g
+       LEFT JOIN game_sessions gs
+         ON gs.game_id = g.id AND gs.updated_at >= DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+       WHERE g.is_active = 1
+       GROUP BY g.id, g.name, g.slug, g.type
+       ORDER BY online_players DESC, g.name ASC`,
+      []
+    );
+    res.json({
+      totalOnline: onlineUsers.size,
+      games: result?.rows || [],
+    });
+  } catch (err) {
+    console.error('Online players error:', err.message);
+    res.status(500).json({ error: 'Failed to load online players' });
+  }
+});
+
 module.exports = router;
 module.exports.trackOnlineUsers = trackOnlineUsers;
 module.exports.onlineUsers = onlineUsers;

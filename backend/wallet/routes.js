@@ -161,6 +161,36 @@ const debitWallet = async (userId, amount, type, description, referenceId) => {
   }
 };
 
+router.get('/summary', authenticate, async (req, res) => {
+  try {
+    const [winToday, winTotal, betsTotal] = await Promise.all([
+      query(
+        `SELECT COALESCE(SUM(amount),0) AS total FROM wallet_transactions
+         WHERE user_id = ? AND type = 'win' AND DATE(created_at) = CURDATE()`,
+        [req.user.id]
+      ),
+      query(
+        `SELECT COALESCE(SUM(amount),0) AS total FROM wallet_transactions
+         WHERE user_id = ? AND type = 'win'`,
+        [req.user.id]
+      ),
+      query(
+        `SELECT COALESCE(SUM(ABS(amount)),0) AS total FROM wallet_transactions
+         WHERE user_id = ? AND type = 'bet'`,
+        [req.user.id]
+      ),
+    ]);
+    res.json({
+      winnings_today: parseFloat(winToday.rows[0]?.total) || 0,
+      winnings_total: parseFloat(winTotal.rows[0]?.total) || 0,
+      bets_total:     parseFloat(betsTotal.rows[0]?.total) || 0,
+    });
+  } catch (err) {
+    console.error('Wallet summary error:', err.message);
+    res.status(500).json({ error: 'Failed to load summary' });
+  }
+});
+
 // Admin-only manual refund — players cannot self-refund (was an infinite-money exploit)
 router.post('/refund', authenticate, isAdmin, async (req, res) => {
   const { userId, transactionId, reason, amount } = req.body;
