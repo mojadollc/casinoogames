@@ -1,14 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { gsap } from 'gsap';
 import { gameAPI, walletAPI } from '../../services/api';
-import { AnimatedReel } from '../../components/slots/SlotSymbols';
-import useSlotSounds from '../../components/slots/useSlotSounds';
-import useParticles from '../../components/slots/useParticles';
-import BigWinOverlay from '../../components/slots/BigWinOverlay';
-import WinCounter from '../../components/slots/WinCounter';
-
-const REEL_STOP_DELAYS = [0, 150, 320, 520, 750]; // ms
+import SlotSymbol from '../../components/slots/SlotSymbols';
+import PixiSlotReels from '../../components/slots/PixiSlotReels';
 
 // Game-specific themed symbol sets
 const GAME_THEMES = {
@@ -222,6 +216,71 @@ const DEFAULT_SYMBOLS = {
 
 const SYMBOL_KEYS = Object.keys(DEFAULT_SYMBOLS);
 
+// Audio context
+let audioContext = null;
+const getAudioContext = () => {
+  if (!audioContext) {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  return audioContext;
+};
+
+const playSound = (type) => {
+  const ctx = getAudioContext();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  if (type === 'spin') {
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(400, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.15);
+  } else if (type === 'stop') {
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(600, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.1);
+  } else if (type === 'win') {
+    [523, 659, 784, 1047].forEach((freq, i) => {
+      setTimeout(() => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.type = 'sine';
+        o.frequency.setValueAtTime(freq, ctx.currentTime);
+        g.gain.setValueAtTime(0.2, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+        o.start(ctx.currentTime);
+        o.stop(ctx.currentTime + 0.3);
+      }, i * 100);
+    });
+  } else if (type === 'bigwin') {
+    for (let i = 0; i < 12; i++) {
+      setTimeout(() => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.type = 'square';
+        o.frequency.setValueAtTime(400 + i * 80, ctx.currentTime);
+        g.gain.setValueAtTime(0.1, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+        o.start(ctx.currentTime);
+        o.stop(ctx.currentTime + 0.1);
+      }, i * 60);
+    }
+  }
+};
+
 export default function SlotGame() {
   const { slug } = useParams();
   const navigate = useNavigate();
@@ -231,20 +290,14 @@ export default function SlotGame() {
   const [bet, setBet] = useState(10);
   const [reels, setReels] = useState(Array(5).fill(null).map(() => Array(3).fill('cherry')));
   const [spinning, setSpinning] = useState(false);
+  const [reelStates, setReelStates] = useState([true, true, true, true, true]);
   const [lastWin, setLastWin] = useState(0);
   const [freeSpins, setFreeSpins] = useState(0);
   const [message, setMessage] = useState('');
   const [winningLines, setWinningLines] = useState([]);
-  const [bigWinAmount, setBigWinAmount] = useState(0);
+  const [showBigWin, setShowBigWin] = useState(false);
   const [autoSpin, setAutoSpin] = useState(false);
   const [showPaytable, setShowPaytable] = useState(false);
-  const spinBtnRef = useRef(null);
-  const particleCanvasRef = useRef(null);
-  const reelsContainerRef = useRef(null);
-  // Imperative refs for each AnimatedReel
-  const reelRefs = useRef([null, null, null, null, null]);
-  const sounds = useSlotSounds();
-  const { triggerCoinBurst, triggerBigWinBurst } = useParticles(particleCanvasRef);
 
   // Get symbols for current game
   const SYMBOLS = GAME_THEMES[slug] || DEFAULT_SYMBOLS;
@@ -261,6 +314,7 @@ export default function SlotGame() {
         Array(3).fill(null).map(() => keys[Math.floor(Math.random() * keys.length)])
       );
       setReels(initialReels);
+      setReelStates([false, false, false, false, false]);
     }).catch(() => navigate('/'));
   }, [slug, navigate]);
 
@@ -274,25 +328,51 @@ export default function SlotGame() {
     }
   }, [autoSpin, spinning, balance, bet]);
 
-  // Stop reels sequentially — called after API returns
-  const stopReels = useCallback((finalReels) => {
-    return new Promise((resolve) => {
-      let stopped = 0;
-      reelRefs.current.forEach((r, i) => {
-        setTimeout(() => {
-          r?.stopSpin(finalReels[i], () => {
-            sounds.play('clack');
-            stopped++;
-            if (stopped >= 5) {
-              setSpinning(false);
-              setReels(finalReels);
-              resolve();
-            }
-          });
-        }, REEL_STOP_DELAYS[i]);
+  const spinReels = async (finalReels) => {
+    setSpinning(true);
+    setWinningLines([]);
+    setLastWin(0);
+    setMessage('');
+    setShowBigWin(false);
+    
+    playSound('spin');
+
+    // Animate each reel stopping sequentially
+    for (let i = 0; i < 5; i++) {
+      setReelStates(prev => prev.map((s, idx) => idx <= i ? false : true));
+      
+      // Spin this reel
+      const themeSymbols = GAME_THEMES[slug] || DEFAULT_SYMBOLS;
+      const keys = Object.keys(themeSymbols);
+      const spinInterval = setInterval(() => {
+        setReels(prev => {
+          const newReels = [...prev];
+          newReels[i] = [
+            keys[Math.floor(Math.random() * keys.length)],
+            keys[Math.floor(Math.random() * keys.length)],
+            keys[Math.floor(Math.random() * keys.length)]
+          ];
+          return newReels;
+        });
+      }, 50);
+
+      await new Promise(r => setTimeout(r, 200 + i * 150));
+      clearInterval(spinInterval);
+      
+      // Set final symbols for this reel
+      setReels(prev => {
+        const newReels = [...prev];
+        newReels[i] = finalReels[i];
+        return newReels;
       });
-    });
-  }, [sounds]);
+      
+      playSound('stop');
+      await new Promise(r => setTimeout(r, 100));
+    }
+
+    setSpinning(false);
+    setReelStates([false, false, false, false, false]);
+  };
 
   // Convert backend grid [{id,name}, ...] columns into string-id reels
   const normalizeGrid = (grid) => {
@@ -307,63 +387,34 @@ export default function SlotGame() {
   };
 
   const spin = async () => {
-    if (spinning || balance < bet || !game) return;
-
-    // START SPINNING IMMEDIATELY — visible before API responds
-    setSpinning(true);
-    setWinningLines([]);
-    setLastWin(0);
-    setMessage('');
-    setBigWinAmount(0);
-    sounds.play('whoosh');
-    reelRefs.current.forEach(r => r?.startSpin());
+    if (spinning || balance < bet) return;
 
     try {
       const { data } = await gameAPI.spin(game.id, bet);
       const finalGrid = normalizeGrid(data.grid);
-      await stopReels(finalGrid);
-
+      await spinReels(finalGrid);
+      
       setBalance(data.balance ?? data.newBalance ?? balance);
       setLastWin(data.totalWin || 0);
 
       if (data.totalWin > 0) {
         if (data.totalWin >= bet * 25) {
-          setBigWinAmount(data.totalWin);
-          sounds.play('bigwin');
-          // Big win particle burst from center of screen
-          triggerBigWinBurst(window.innerWidth / 2, window.innerHeight * 0.5);
-          sounds.play('coinburst');
+          setShowBigWin(true);
+          playSound('bigwin');
           setMessage(`🌟 BIG WIN! ₱${data.totalWin.toLocaleString()}! 🌟`);
         } else if (data.totalWin >= bet * 10) {
-          sounds.play('win');
-          // Coin burst from win display area
-          triggerCoinBurst(window.innerWidth / 2, window.innerHeight * 0.65);
-          sounds.play('coins');
+          playSound('win');
           setMessage(`⭐ NICE WIN! ₱${data.totalWin.toLocaleString()}! ⭐`);
         } else {
-          sounds.play('win');
-          triggerCoinBurst(window.innerWidth / 2, window.innerHeight * 0.65);
+          playSound('win');
           setMessage(`🎉 Win! ₱${data.totalWin.toLocaleString()}`);
         }
         
-        // Highlight winning paylines — engine returns payline INDEX, map to row arrays
-        // DEFAULT_CONFIG paylines[1] = [1,1,1,1,1] (middle row), etc.
-        const PAYLINES = [
-          [1,1,1,1,1],[0,0,0,0,0],[2,2,2,2,2],
-          [0,1,2,1,0],[2,1,0,1,2],[0,0,1,2,2],
-          [2,2,1,0,0],[1,0,0,0,1],[1,2,2,2,1],
-          [0,1,1,1,0],[2,1,1,1,2],[1,0,1,0,1],
-          [1,2,1,2,1],[0,1,0,1,0],[2,1,2,1,2],
-          [1,1,0,1,1],[1,1,2,1,1],[0,0,1,0,0],
-          [2,2,1,2,2],[0,2,0,2,0],
-        ];
+        // Highlight winning paylines from engine response when available
         if (data.paylineWins && data.paylineWins.length > 0) {
-          setWinningLines(data.paylineWins
-            .map(w => PAYLINES[w.payline])
-            .filter(Boolean)
-          );
+          setWinningLines(data.paylineWins.map(w => w.payline));
         } else if (data.grid) {
-          setWinningLines([PAYLINES[0]]);
+          setWinningLines([[0, 1, 2, 3, 4]]);
         }
       }
 
@@ -372,8 +423,8 @@ export default function SlotGame() {
         setMessage(prev => (prev || '') + ` 🎁 +${data.freeSpinsAwarded} Free Spins!`);
       }
     } catch (err) {
-      await stopReels(generateRandomReels());
       setMessage(err.response?.data?.error || 'Spin failed');
+      setSpinning(false);
     }
   };
 
@@ -389,55 +440,25 @@ export default function SlotGame() {
     if (spinning || freeSpins <= 0) return;
     
     setFreeSpins(prev => prev - 1);
-    setSpinning(true);
-    setWinningLines([]);
-    setLastWin(0);
-    setMessage('');
-    sounds.play('whoosh');
-    reelRefs.current.forEach(r => r?.startSpin());
     try {
       const { data } = await gameAPI.freeSpin(game.id);
       const finalGrid = normalizeGrid(data.grid);
-      await stopReels(finalGrid);
+      await spinReels(finalGrid);
       setBalance(data.balance ?? data.newBalance ?? balance);
       setLastWin(data.totalWin || 0);
       setFreeSpins(data.freeSpinsRemaining ?? Math.max(0, freeSpins - 1));
+      
       if (data.totalWin > 0) {
-        sounds.play('win');
-        triggerCoinBurst(window.innerWidth / 2, window.innerHeight * 0.65);
+        playSound('win');
         setMessage(`🎁 Free Spin Win! ₱${data.totalWin.toLocaleString()}`);
       }
       if (data.freeSpinsAwarded > 0) {
         setFreeSpins(prev => prev + data.freeSpinsAwarded);
       }
     } catch (err) {
-      await stopReels(generateRandomReels());
       setMessage(err.response?.data?.error || 'Free spin failed');
+      setSpinning(false);
     }
-  };
-
-  const handleSpinPointerDown = () => {
-    if (!spinBtnRef.current || spinning || balance < bet) return;
-    sounds.play('click');
-    gsap.killTweensOf(spinBtnRef.current);
-    gsap.fromTo(spinBtnRef.current,
-      { scale: 1 },
-      {
-        scale: 0.92,
-        duration: 0.08,
-        ease: 'power2.in',
-        onComplete() {
-          gsap.to(spinBtnRef.current, {
-            scale: 1.05,
-            duration: 0.1,
-            ease: 'power2.out',
-            onComplete() {
-              gsap.to(spinBtnRef.current, { scale: 1, duration: 0.12, ease: 'power2.inOut' });
-            },
-          });
-        },
-      }
-    );
   };
 
   if (!game) return <div className="loading"><div className="spinner" /></div>;
@@ -452,28 +473,6 @@ export default function SlotGame() {
       position: 'relative',
       overflow: 'hidden'
     }}>
-      {/* Particle canvas — full screen overlay */}
-      <canvas
-        ref={particleCanvasRef}
-        width={window.innerWidth}
-        height={window.innerHeight}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          pointerEvents: 'none',
-          zIndex: 8000,
-        }}
-      />
-
-      {/* Big Win Overlay */}
-      {bigWinAmount > 0 && (
-        <BigWinOverlay
-          amount={bigWinAmount}
-          bet={bet}
-          onClose={() => setBigWinAmount(0)}
-        />
-      )}
-
       {/* Background Effects */}
       <div style={{
         position: 'absolute',
@@ -591,105 +590,55 @@ export default function SlotGame() {
           </div>
         </div>
 
-        {/* Reels Container */}
+        {/* PixiJS Reels Container */}
         <div style={{
           flex: 1,
-          padding: '24px 12px',
+          padding: '10px',
           background: 'linear-gradient(145deg, #12082a, #1a0a35)',
           borderRadius: '24px',
-          border: '3px solid',
-          borderImage: 'linear-gradient(135deg, #ffd700, #b8860b, #ffd700) 1',
+          border: '3px solid #b8860b',
+          boxShadow: 'inset 0 0 35px rgba(0,0,0,.55), 0 0 28px rgba(255,215,0,.12)',
           position: 'relative',
-          marginBottom: '16px'
+          marginBottom: '16px',
+          overflow: 'hidden'
         }}>
-          {/* Reels */}
-          <div
-            ref={reelsContainerRef}
-            style={{
-              display: 'flex',
-              justifyContent: 'center',
-              gap: '6px',
-              position: 'relative',
-              zIndex: 1,
-            }}
-          >
-            {[0,1,2,3,4].map((ci) => {
-              const winRows = winningLines
-                .filter(line => Array.isArray(line) && line.length === 5)
-                .map(line => line[ci])
-                .filter(r => r !== null && r !== undefined);
-
-              return (
-                <AnimatedReel
-                  key={ci}
-                  ref={el => reelRefs.current[ci] = el}
-                  initialSymbols={reels[ci]}
-                  cellSize={58}
-                  gap={6}
-                  winningRows={winRows}
-                  accent='#FFD700'
-                />
-              );
-            })}
-
-            {/* Payline SVG overlay — draws lines connecting winning positions */}
-            {winningLines.length > 0 && !spinning && (
-              <svg
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  width: '100%',
-                  height: '100%',
-                  pointerEvents: 'none',
-                  zIndex: 10,
-                  overflow: 'visible',
-                }}
-              >
-                {winningLines.map((line, li) =>
-                  Array.isArray(line) && line.length === 5 ? (
-                    <polyline
-                      key={li}
-                      points={line.map((row, col) => {
-                        // Each reel column is 70px wide (58 cell + 6 gap + 6 border padding)
-                        // Row 0=top, 1=mid, 2=bottom; cell height 58 + gap 6 = 64px
-                        const x = col * 70 + 35;
-                        const y = row * 64 + 32;
-                        return `${x},${y}`;
-                      }).join(' ')}
-                      fill='none'
-                      stroke='#FFD700'
-                      strokeWidth='3'
-                      strokeLinecap='round'
-                      strokeLinejoin='round'
-                      opacity='0.85'
-                      style={{ filter: 'drop-shadow(0 0 6px #FFD700)' }}
-                    />
-                  ) : null
-                )}
-              </svg>
-            )}
+          <div style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            background: 'radial-gradient(circle at 50% 45%, rgba(255,215,0,.10), transparent 52%)',
+            zIndex: 0
+          }} />
+          <div style={{ position: 'relative', zIndex: 1 }}>
+            <PixiSlotReels
+              reels={reels}
+              reelStates={reelStates}
+              spinning={spinning}
+              winningLines={winningLines}
+              themeSymbols={GAME_THEMES[slug] || DEFAULT_SYMBOLS}
+              lastWin={lastWin}
+              showBigWin={showBigWin}
+              freeSpins={freeSpins}
+              message={message}
+              height={Math.min(390, Math.max(300, Math.floor(window.innerHeight * 0.42)))}
+            />
           </div>
-
-          {/* Machine Frame Decorations */}
           <div style={{
             position: 'absolute',
-            top: '8px',
-            left: '8px',
-            fontSize: '24px',
-            opacity: 0.3
-          }}>🐉</div>
-          <div style={{
-            position: 'absolute',
-            top: '8px',
-            right: '8px',
-            fontSize: '24px',
-            opacity: 0.3,
-            transform: 'scaleX(-1)'
-          }}>🐉</div>
+            left: '5%',
+            right: '5%',
+            top: '50%',
+            height: '2px',
+            transform: 'translateY(-50%)',
+            background: 'linear-gradient(90deg, transparent, rgba(255,215,0,.72), transparent)',
+            boxShadow: '0 0 16px rgba(255,215,0,.6)',
+            pointerEvents: 'none',
+            zIndex: 2
+          }} />
         </div>
 
         {/* Win Display */}
-        {lastWin > 0 && bigWinAmount === 0 && (
+        {lastWin > 0 && (
           <div style={{
             textAlign: 'center',
             marginBottom: '16px',
@@ -699,8 +648,16 @@ export default function SlotGame() {
             border: '2px solid var(--gold)',
             animation: 'winPop 0.5s ease-out'
           }}>
-            <WinCounter amount={lastWin} />
-            <div style={{ color: 'var(--gold)', fontSize: '12px', marginTop: '4px' }}>{message}</div>
+            <div style={{
+              fontSize: showBigWin ? '36px' : '28px',
+              fontWeight: '900',
+              background: 'linear-gradient(135deg, #ffd700, #ffed4a, #ffd700)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent'
+            }}>
+              🎉 ₱{lastWin.toLocaleString()} 🎉
+            </div>
+            {!showBigWin && <div style={{ color: 'var(--gold)', fontSize: '12px', marginTop: '4px' }}>{message}</div>}
           </div>
         )}
 
@@ -828,32 +785,24 @@ export default function SlotGame() {
           </button>
 
           {/* Main Spin Button */}
-          <button
-            ref={spinBtnRef}
-            onClick={spin}
-            onPointerDown={handleSpinPointerDown}
-            disabled={spinning || balance < bet || balance <= 0}
-            style={{
-              width: '100px',
-              height: '100px',
-              borderRadius: '50%',
-              background: spinning || balance < bet || balance <= 0
-                ? 'linear-gradient(135deg, #2a1a4a, #1a0a2e)'
-                : 'linear-gradient(135deg, #ffd700, #ffed4a, #ffd700)',
-              border: '4px solid',
-              borderColor: spinning || balance < bet || balance <= 0 ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.4)',
-              color: spinning || balance < bet || balance <= 0 ? '#666' : '#1a0a2e',
-              fontSize: '18px',
-              fontWeight: '900',
-              cursor: spinning || balance < bet || balance <= 0 ? 'not-allowed' : 'pointer',
-              boxShadow: spinning || balance < bet || balance <= 0 ? 'none' : '0 0 40px rgba(255, 215, 0, 0.6)',
-              textTransform: 'uppercase',
-              letterSpacing: '2px',
-              animation: spinning ? 'spinPulse 0.3s ease infinite' : 'none',
-              touchAction: 'manipulation',
-              transformOrigin: 'center',
-            }}
-          >
+          <button onClick={spin} disabled={spinning || balance < bet || balance <= 0} style={{
+            width: '100px',
+            height: '100px',
+            borderRadius: '50%',
+            background: spinning || balance < bet || balance <= 0
+              ? 'linear-gradient(135deg, #2a1a4a, #1a0a2e)'
+              : 'linear-gradient(135deg, #ffd700, #ffed4a, #ffd700)',
+            border: '4px solid',
+            borderColor: spinning || balance < bet || balance <= 0 ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.4)',
+            color: spinning || balance < bet || balance <= 0 ? '#666' : '#1a0a2e',
+            fontSize: '18px',
+            fontWeight: '900',
+            cursor: spinning || balance < bet || balance <= 0 ? 'not-allowed' : 'pointer',
+            boxShadow: spinning || balance < bet || balance <= 0 ? 'none' : '0 0 40px rgba(255, 215, 0, 0.6)',
+            textTransform: 'uppercase',
+            letterSpacing: '2px',
+            animation: spinning ? 'spinPulse 0.3s ease infinite' : 'none'
+          }}>
             {spinning ? '🎰' : 'SPIN'}
           </button>
 
@@ -976,6 +925,15 @@ export default function SlotGame() {
 
       {/* Animations */}
       <style>{`
+        @keyframes symbolSpin {
+          0% { transform: translateY(-10px); opacity: 0.4; }
+          50% { transform: translateY(0); opacity: 1; }
+          100% { transform: translateY(10px); opacity: 0.4; }
+        }
+        @keyframes winPulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.1); }
+        }
         @keyframes spinPulse {
           0%, 100% { transform: scale(1); box-shadow: 0 0 40px rgba(255, 215, 0, 0.6); }
           50% { transform: scale(1.05); box-shadow: 0 0 60px rgba(255, 215, 0, 0.8); }

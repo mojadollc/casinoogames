@@ -1,15 +1,14 @@
 const express = require('express');
-const { notifyFishingCatch, notifyGameEvent } = require('./multiplayer');
 const { query, pool } = require('../config/database');
-const { authenticate, isAdmin, gameLimiter } = require('../middleware/auth');
+const { authenticate, isAdmin } = require('../middleware/auth');
 const { debitWallet, creditWallet } = require('../wallet/routes');
 const { GameEngine } = require('../../game-engine/engine');
 
 const router = express.Router();
 
-// In-memory cache with TTL (10s) — ensures settings sync quickly after admin changes
+// In-memory cache with TTL (60s) — ensures settings sync within 1 minute
 const gameControlsCache = new Map();
-const CACHE_TTL = 10 * 1000; // 10 seconds
+const CACHE_TTL = 60 * 1000; // 60 seconds
 
 // Load controls from DB, fallback to defaults
 async function getGameControls(gameId) {
@@ -20,21 +19,18 @@ async function getGameControls(gameId) {
   let controls;
   if (result.rows[0]) {
     controls = {
-      win_rate: parseFloat(result.rows[0].win_rate) || 25,
+      win_rate: parseFloat(result.rows[0].win_rate),
       force_outcome: result.rows[0].force_outcome || null,
-      min_payout: parseFloat(result.rows[0].min_payout) || 0,
-      max_payout: parseFloat(result.rows[0].max_payout) || 0,
-      payout_cap: parseFloat(result.rows[0].payout_cap) || 0,
+      min_payout: parseFloat(result.rows[0].min_payout),
+      max_payout: parseFloat(result.rows[0].max_payout),
+      payout_cap: parseFloat(result.rows[0].payout_cap),
       dry_run: !!result.rows[0].dry_run,
       player_class_overrides: new Map()
     };
   } else {
-    // No row yet — check if there is a global/default control row
-    const globalResult = await query("SELECT * FROM game_controls WHERE game_id IS NULL OR game_id = '' LIMIT 1");
-    const globalForce = globalResult.rows[0]?.force_outcome || null;
-    controls = { win_rate: 25, force_outcome: globalForce, min_payout: 0, max_payout: 0, payout_cap: 0, dry_run: false, player_class_overrides: new Map() };
-    // Insert defaults for this game so future saves work
-    await query('INSERT IGNORE INTO game_controls (id, game_id, win_rate, force_outcome) VALUES (UUID(), ?, 25, ?)', [gameId, globalForce]);
+    controls = { win_rate: 25, force_outcome: null, min_payout: 0, max_payout: 30, payout_cap: 0, dry_run: false, player_class_overrides: new Map() };
+    // Insert defaults
+    await query('INSERT IGNORE INTO game_controls (id, game_id, win_rate) VALUES (UUID(), ?, 25)', [gameId]);
   }
   gameControlsCache.set(gameId, { data: controls, ts: Date.now() });
   return controls;
@@ -44,8 +40,7 @@ async function getGameControls(gameId) {
 async function saveGameControls(gameId, updates, adminId) {
   const controls = await getGameControls(gameId);
   Object.assign(controls, updates);
-  // Invalidate cache so next spin reads fresh from DB
-  gameControlsCache.delete(gameId);
+  gameControlsCache.set(gameId, { data: controls, ts: Date.now() });
 
   await query(`
     INSERT INTO game_controls (id, game_id, win_rate, force_outcome, min_payout, max_payout, payout_cap, dry_run, updated_by)
@@ -74,56 +69,10 @@ router.get('/jackpots/total', async (req, res) => {
   }
 });
 
-// Get online players per game (admin only)
-router.get('/online-players', authenticate, isAdmin, async (req, res) => {
-  try {
-    // Count distinct users active in last 5 minutes per game
-    const result = await query(`
-      SELECT 
-        g.id as game_id,
-        g.name as game_name,
-        g.slug as game_slug,
-        g.type as game_type,
-        COUNT(DISTINCT gr.user_id) as online_players
-      FROM games g
-      LEFT JOIN game_rounds gr ON gr.game_id = g.id 
-        AND gr.created_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE)
-      WHERE g.status = 'active'
-      GROUP BY g.id, g.name, g.slug, g.type
-      ORDER BY online_players DESC, g.name ASC
-    `);
-    
-    // Get total online players (distinct across all games)
-    const totalResult = await query(`
-      SELECT COUNT(DISTINCT user_id) as total 
-      FROM game_rounds 
-      WHERE created_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE)
-    `);
-    
-    res.json({
-      games: result.rows,
-      totalOnline: parseInt(totalResult.rows[0].total) || 0
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-    // admin/games endpoint returns win_rate from game_controls joined to games
+// Get available games
 router.get('/', async (req, res) => {
-  try {
-    const result = await query(`
-      SELECT g.id, g.name, g.slug, g.type, g.rtp, g.min_bet, g.max_bet, g.config, g.thumbnail_url,
-             COALESCE(gc.win_rate, 25) as win_rate,
-             gc.force_outcome
-      FROM games g
-      LEFT JOIN game_controls gc ON gc.game_id = g.id
-      WHERE g.status = 'active'
-    `);
-    res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  const result = await query("SELECT id, name, slug, type, rtp, min_bet, max_bet, config FROM games WHERE status = 'active'");
+  res.json(result.rows);
 });
 
 // Get game details
@@ -134,7 +83,7 @@ router.get('/:slug', authenticate, async (req, res) => {
 });
 
 // Spin
-router.post('/:gameId/spin', authenticate, gameLimiter, async (req, res) => {
+router.post('/:gameId/spin', authenticate, async (req, res) => {
   const { betAmount } = req.body;
   const { gameId } = req.params;
 
@@ -160,21 +109,13 @@ router.post('/:gameId/spin', authenticate, gameLimiter, async (req, res) => {
       }
     }
 
-    // Session stats for payout cap — track per-game for individual caps
+    // Session stats for RTP enforcement
     const sessionStats = await query(
       `SELECT COALESCE(SUM(bet_amount), 0) as total_bet, COALESCE(SUM(win_amount), 0) as total_win, COUNT(*) as spins
        FROM game_rounds WHERE user_id = ? AND game_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)`,
       [req.user.id, gameId]
     );
     const stats = sessionStats.rows[0];
-
-    // Get per-game session total for THIS game's payout cap enforcement
-    const gameSessionStats = await query(
-      `SELECT COALESCE(SUM(win_amount), 0) as total_win FROM game_rounds
-       WHERE user_id = ? AND game_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)`,
-      [req.user.id, gameId]
-    );
-    const gameAlreadyWon = parseFloat(gameSessionStats.rows[0].total_win) || 0;
 
     // Load controls from DB (TTL-cached)
     const controls = await getGameControls(gameId);
@@ -187,9 +128,8 @@ router.post('/:gameId/spin', authenticate, gameLimiter, async (req, res) => {
       [req.user.id, gameId]
     );
 
-    // Global force_outcome=loss CANNOT be overridden by per-player queue
     let forcedOutcome = controls.force_outcome;
-    if (controls.force_outcome !== 'loss' && playerForces.rows[0]) forcedOutcome = playerForces.rows[0].outcome;
+    if (playerForces.rows[0]) forcedOutcome = playerForces.rows[0].outcome;
 
     const gameSettings = {
       win_rate: controls.win_rate,
@@ -217,10 +157,10 @@ router.post('/:gameId/spin', authenticate, gameLimiter, async (req, res) => {
 
     let result;
     try {
-      const engine = new GameEngine(engineConfig, gameSettings, g.slug);
+      const engine = new GameEngine(engineConfig, gameSettings);
       result = engine.spin(betAmount, false, {
         totalBet: parseFloat(stats.total_bet) || 0,
-        totalWin: gameAlreadyWon,  // use per-game total for this game's payout cap
+        totalWin: parseFloat(stats.total_win) || 0,
         spins: parseInt(stats.spins) || 0
       });
     } catch (spinErr) {
@@ -236,15 +176,12 @@ router.post('/:gameId/spin', authenticate, gameLimiter, async (req, res) => {
     }
 
     // Re-create engine reference for jackpot check (same settings)
-    const engine = new GameEngine(engineConfig, gameSettings, g.slug);
+    const engine = new GameEngine(engineConfig, gameSettings);
 
-    // Jackpot — never awarded on forced loss
+    // Jackpot
     const jackpot = await query("SELECT * FROM jackpots WHERE game_id = ? AND status = 'active'", [gameId]);
     let jackpotWin = 0;
-    // Use controls.force_outcome (global) not forcedOutcome (which could be per-player)
-    const isGlobalForceLoss = controls.force_outcome === 'loss';
-    const isSpinForcedLoss = isGlobalForceLoss || result.forcedOutcome === 'loss_forced' || result.forcedOutcome === 'loss_cap';
-    if (jackpot.rows[0] && !isSpinForcedLoss) {
+    if (jackpot.rows[0]) {
       jackpotWin = engine.checkJackpot(parseFloat(jackpot.rows[0].current_amount));
       if (jackpotWin > 0) {
         result.totalWin += jackpotWin;
@@ -257,35 +194,11 @@ router.post('/:gameId/spin', authenticate, gameLimiter, async (req, res) => {
         await query('UPDATE jackpots SET current_amount = current_amount + ? WHERE id = ?',
           [result.jackpotContribution, jackpot.rows[0].id]);
       }
-    } else if (jackpot.rows[0] && isSpinForcedLoss) {
-      // Still accumulate jackpot contribution even on forced loss
-      await query('UPDATE jackpots SET current_amount = current_amount + ? WHERE id = ?',
-        [result.jackpotContribution, jackpot.rows[0].id]);
     }
 
-    // Mark forced outcome used — only if it was actually applied (not overridden by global loss)
-    if (playerForces.rows[0] && controls.force_outcome !== 'loss') {
+    // Mark forced outcome used
+    if (playerForces.rows[0]) {
       await query('UPDATE forced_outcomes SET used = 1, used_at = NOW() WHERE id = ?', [playerForces.rows[0].id]);
-    }
-
-    // Final hard stop — if global force_outcome=loss, zero win unconditionally
-    if (controls.force_outcome === 'loss') {
-      result.totalWin = 0;
-      result.freeSpinsAwarded = 0;
-      result.bonusTriggered = false;
-      result.jackpotWon = 0;
-      jackpotWin = 0;
-    }
-
-    // Clamp win to remaining payout cap allowance for THIS game only
-    if (gameSettings.payout_cap > 0 && result.totalWin > 0) {
-      const remaining = Math.max(0, gameSettings.payout_cap - gameAlreadyWon);
-      if (remaining <= 0) {
-        result.totalWin = 0;
-        result.forcedOutcome = 'loss_cap';
-      } else if (result.totalWin > remaining) {
-        result.totalWin = parseFloat(remaining.toFixed(2));
-      }
     }
 
     if (result.totalWin > 0 && !gameSettings.dry_run) {
@@ -305,8 +218,7 @@ router.post('/:gameId/spin', authenticate, gameLimiter, async (req, res) => {
       }
     }
 
-    // Never award free spins on forced loss
-    if (result.freeSpinsAwarded > 0 && controls.force_outcome !== 'loss') {
+    if (result.freeSpinsAwarded > 0) {
       await query('INSERT INTO free_spins (id, user_id, game_id, total_spins, expires_at) VALUES (UUID(),?,?,?, DATE_ADD(NOW(), INTERVAL 24 HOUR))',
         [req.user.id, gameId, result.freeSpinsAwarded]);
     }
@@ -320,7 +232,7 @@ router.post('/:gameId/spin', authenticate, gameLimiter, async (req, res) => {
 });
 
 // Free spin
-router.post('/:gameId/free-spin', authenticate, gameLimiter, async (req, res) => {
+router.post('/:gameId/free-spin', authenticate, async (req, res) => {
   const { gameId } = req.params;
   try {
     const fs = await query(
@@ -346,28 +258,8 @@ router.post('/:gameId/free-spin', authenticate, gameLimiter, async (req, res) =>
       payout_cap: controls.payout_cap
     };
 
-    // Get per-game session total for THIS game's payout cap
-    const gameSessionStats = await query(
-      `SELECT COALESCE(SUM(win_amount), 0) as total_win FROM game_rounds
-       WHERE user_id = ? AND game_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)`,
-      [req.user.id, gameId]
-    );
-    const gameAlreadyWon = parseFloat(gameSessionStats.rows[0].total_win) || 0;
-
-    const engine = new GameEngine(game.rows[0].config?.symbols ? game.rows[0].config : undefined, gameSettings, game.rows[0].slug);
-    const result = engine.spin(game.rows[0].min_bet, true, { totalBet: 0, totalWin: gameAlreadyWon, spins: 0 });
-
-    // Free spin — force_outcome=loss must also zero the win here (engine handles it
-    // but free-spin route passes force_outcome through gameSettings so engine does it)
-    // Extra hard stop in case engine result leaks through
-    if (controls.force_outcome === 'loss') result.totalWin = 0;
-
-    // Clamp free spin win to remaining payout cap for THIS game
-    if (controls.payout_cap > 0 && result.totalWin > 0) {
-      const remaining = Math.max(0, controls.payout_cap - gameAlreadyWon);
-      if (remaining <= 0) result.totalWin = 0;
-      else if (result.totalWin > remaining) result.totalWin = parseFloat(remaining.toFixed(2));
-    }
+    const engine = new GameEngine(game.rows[0].config?.symbols ? game.rows[0].config : undefined, gameSettings);
+    const result = engine.spin(game.rows[0].min_bet, true);
 
     if (result.totalWin > 0) {
       await creditWallet(req.user.id, result.totalWin, 'free_spin_win', 'Free spin win', fs.rows[0].id);
@@ -386,7 +278,7 @@ router.post('/:gameId/free-spin', authenticate, gameLimiter, async (req, res) =>
 });
 
 // Fishing shoot
-router.post('/:gameId/fishing-shoot', authenticate, gameLimiter, async (req, res) => {
+router.post('/:gameId/fishing-shoot', authenticate, async (req, res) => {
   const { betAmount } = req.body;
   const { gameId } = req.params;
   try {
@@ -423,28 +315,10 @@ router.post('/:gameId/fishing-shoot', authenticate, gameLimiter, async (req, res
       hit = true;
     }
 
-    // force_outcome=loss overrides hit result
-    if (controls.force_outcome === 'loss') { totalWin = 0; hit = false; fish = null; }
-
-    // HARD CAP — max_payout is absolute, applied before and after everything
-    const fishingHardCap = controls.max_payout > 0 ? betAmount * controls.max_payout : Infinity;
-    if (totalWin > fishingHardCap) totalWin = parseFloat(fishingHardCap.toFixed(2));
-
-    // Apply min payout floor — only on real wins
-    if (totalWin > 0 && controls.force_outcome !== 'loss') {
+    // Apply max payout cap from admin controls
+    if (totalWin > 0 && controls.max_payout > 0) {
       const mult = totalWin / betAmount;
-      if (controls.min_payout > 0 && mult < controls.min_payout) totalWin = parseFloat((betAmount * controls.min_payout).toFixed(2));
-    }
-    // Payout cap — clamp current win to remaining per-game allowance
-    if (controls.payout_cap > 0 && totalWin > 0) {
-      const sessionWin = await query(
-        "SELECT COALESCE(SUM(win_amount), 0) as total FROM game_rounds WHERE user_id = ? AND game_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)",
-        [req.user.id, gameId]
-      );
-      const gameAlreadyWon = parseFloat(sessionWin.rows[0].total) || 0;
-      const remaining = Math.max(0, controls.payout_cap - gameAlreadyWon);
-      if (remaining <= 0) { totalWin = 0; hit = false; }
-      else if (totalWin > remaining) totalWin = parseFloat(remaining.toFixed(2));
+      if (mult > controls.max_payout) totalWin = parseFloat((betAmount * controls.max_payout).toFixed(2));
     }
 
     if (!controls.dry_run) {
@@ -456,31 +330,6 @@ router.post('/:gameId/fishing-shoot', authenticate, gameLimiter, async (req, res
       [gameId, req.user.id, betAmount, totalWin, JSON.stringify({ hit, fish, dry_run: !!controls.dry_run }), 'fishing']);
 
     const wallet = await query('SELECT balance FROM wallets WHERE user_id = ?', [req.user.id]);
-
-    // Multiplayer: sync catch to everyone in this fishing room
-    if (hit && fish) {
-      try {
-        notifyFishingCatch({
-          gameId,
-          userId: req.user.id,
-          username: req.user.username,
-          fish,
-          totalWin,
-          fishId: req.body.fishId || null,
-        });
-        if (totalWin >= betAmount * 10) {
-          notifyGameEvent('big_catch', {
-            username: req.user.username,
-            fish,
-            totalWin,
-            gameId,
-          });
-        }
-      } catch (e) {
-        console.warn('multiplayer notify failed:', e.message);
-      }
-    }
-
     res.json({ hit, fish, totalWin, balance: wallet.rows[0]?.balance ?? 0, dryRun: !!controls.dry_run });
   } catch (err) {
     console.error('Fishing shoot error:', err);
@@ -490,7 +339,7 @@ router.post('/:gameId/fishing-shoot', authenticate, gameLimiter, async (req, res
 
 // ── Generic table / live / card play (server-authoritative RNG) ──────────────
 // Used by Card, Sic Bo, Live games instead of the slot reel engine.
-router.post('/:gameId/play', authenticate, gameLimiter, async (req, res) => {
+router.post('/:gameId/play', authenticate, async (req, res) => {
   const { gameId } = req.params;
   const { betAmount, bets, side } = req.body; // bets = sicbo map, side = optional card side bet
 
@@ -521,13 +370,13 @@ router.post('/:gameId/play', authenticate, gameLimiter, async (req, res) => {
       }
     }
 
-    // Per-player forced outcome queue — global loss cannot be overridden
+    // Per-player forced outcome queue
     const playerForces = await query(
       "SELECT * FROM forced_outcomes WHERE user_id = ? AND game_id = ? AND used = 0 ORDER BY created_at LIMIT 1",
       [req.user.id, gameId]
     );
     let forceOutcome = controls.force_outcome;
-    if (controls.force_outcome !== 'loss' && playerForces.rows[0]) forceOutcome = playerForces.rows[0].outcome;
+    if (playerForces.rows[0]) forceOutcome = playerForces.rows[0].outcome;
 
     const { SecureRNG } = require('../../game-engine/engine');
     const rng = new SecureRNG();
@@ -646,37 +495,14 @@ router.post('/:gameId/play', authenticate, gameLimiter, async (req, res) => {
       resultPayload = { ...resultPayload, outcome, playerHand, dealerHand };
     }
 
-    // force_outcome=loss overrides everything — zero win, no min_payout boost
-    if (forceOutcome === 'loss') totalWin = 0;
-
-    // HARD CAP — max_payout absolute, applied before min_payout floor
-    if (totalWin > 0 && forceOutcome !== 'loss' && controls.max_payout > 0) {
-      const hard = amount * controls.max_payout;
-      if (totalWin > hard) totalWin = parseFloat(hard.toFixed(2));
-    }
-    // Min payout floor — only on real wins
-    if (totalWin > 0 && forceOutcome !== 'loss') {
+    // Payout caps
+    if (totalWin > 0 && controls.max_payout > 0) {
       const mult = totalWin / amount;
-      if (controls.min_payout > 0 && mult < controls.min_payout) totalWin = parseFloat((amount * controls.min_payout).toFixed(2));
+      if (mult > controls.max_payout) totalWin = parseFloat((amount * controls.max_payout).toFixed(2));
     }
-    // Payout cap — clamp current win to remaining per-game allowance
-    if (controls.payout_cap > 0 && totalWin > 0) {
-      const sessionWin = await query(
-        "SELECT COALESCE(SUM(win_amount), 0) as total FROM game_rounds WHERE user_id = ? AND game_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)",
-        [req.user.id, gameId]
-      );
-      const gameAlreadyWon = parseFloat(sessionWin.rows[0].total) || 0;
-      const remaining = Math.max(0, controls.payout_cap - gameAlreadyWon);
-      if (remaining <= 0) totalWin = 0;
-      else if (totalWin > remaining) totalWin = parseFloat(remaining.toFixed(2));
+    if (playerClass === 'vip' && totalWin > amount) {
+      totalWin = parseFloat((totalWin * 1.05).toFixed(2)); // small VIP bonus on wins
     }
-    // VIP bonus — never on forced loss
-    if (playerClass === 'vip' && totalWin > 0 && forceOutcome !== 'loss') {
-      totalWin = parseFloat((totalWin * 1.05).toFixed(2));
-    }
-
-    // Final hard stop — force_outcome=loss always pays zero, no exceptions
-    if (forceOutcome === 'loss') totalWin = 0;
 
     // Stake amount for debit: for sicbo use sum of bets if provided
     let debitAmount = amount;
@@ -848,12 +674,14 @@ router.put('/bulk/win-rate', authenticate, isAdmin, async (req, res) => {
       targetGameIds = allGames.rows.map(g => g.id);
     }
 
+    // Upsert win_rate for all target games in one loop, then invalidate cache
     for (const gameId of targetGameIds) {
       await query(`
         INSERT INTO game_controls (id, game_id, win_rate, updated_by)
         VALUES (UUID(), ?, ?, ?)
         ON DUPLICATE KEY UPDATE win_rate = VALUES(win_rate), updated_by = VALUES(updated_by), updated_at = NOW()
       `, [gameId, rate, req.user.id]);
+      // Invalidate cache so next read fetches fresh value from DB
       gameControlsCache.delete(gameId);
     }
 
@@ -861,38 +689,6 @@ router.put('/bulk/win-rate', authenticate, isAdmin, async (req, res) => {
       [req.user.id, 'bulk_win_rate_update', 'games', JSON.stringify({ win_rate: rate, updated_count: targetGameIds.length })]);
 
     res.json({ success: true, message: `Win rate set to ${rate}% for ${targetGameIds.length} game(s)`, win_rate: rate, count: targetGameIds.length });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Bulk force outcome across ALL games
-router.put('/bulk/force-outcome', authenticate, isAdmin, async (req, res) => {
-  try {
-    const { force_outcome, game_ids } = req.body;
-    const outcome = force_outcome || null;
-
-    let targetGameIds = [];
-    if (Array.isArray(game_ids) && game_ids.length > 0) {
-      targetGameIds = game_ids;
-    } else {
-      const allGames = await query("SELECT id FROM games");
-      targetGameIds = allGames.rows.map(g => g.id);
-    }
-
-    for (const gameId of targetGameIds) {
-      await query(`
-        INSERT INTO game_controls (id, game_id, win_rate, force_outcome, updated_by)
-        VALUES (UUID(), ?, 25, ?, ?)
-        ON DUPLICATE KEY UPDATE force_outcome = VALUES(force_outcome), updated_by = VALUES(updated_by), updated_at = NOW()
-      `, [gameId, outcome, req.user.id]);
-      gameControlsCache.delete(gameId);
-    }
-
-    await query('INSERT INTO audit_logs (id, user_id, action, entity, details) VALUES (UUID(), ?, ?, ?, ?)',
-      [req.user.id, 'bulk_force_outcome_update', 'games', JSON.stringify({ force_outcome: outcome, updated_count: targetGameIds.length })]);
-
-    res.json({ success: true, message: `Force outcome set to "${outcome || 'random'}" for ${targetGameIds.length} game(s)`, force_outcome: outcome, count: targetGameIds.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1013,130 +809,5 @@ router.get('/:gameId/stats', authenticate, isAdmin, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
-
-// ── Cockfighting / Sabong (Meron vs Wala) ─────────────────────────────────────
-// Real-money bet on MERON | WALA | DRAW. Outcome uses admin win_rate / force_outcome.
-router.post('/:gameId/cockfight', authenticate, gameLimiter, async (req, res) => {
-  const { gameId } = req.params;
-  const betAmount = parseFloat(req.body.betAmount);
-  const side = String(req.body.side || '').toLowerCase(); // meron | wala | draw
-
-  try {
-    if (!Number.isFinite(betAmount) || betAmount <= 0) {
-      return res.status(400).json({ error: 'Invalid bet amount' });
-    }
-    if (!['meron', 'wala', 'draw'].includes(side)) {
-      return res.status(400).json({ error: 'Choose side: meron, wala, or draw' });
-    }
-
-    const game = await query("SELECT * FROM games WHERE id = ? AND status = 'active'", [gameId]);
-    if (!game.rows[0]) return res.status(404).json({ error: 'Game not found' });
-    const g = game.rows[0];
-    if (betAmount < Number(g.min_bet) || betAmount > Number(g.max_bet)) {
-      return res.status(400).json({ error: `Bet must be between ${g.min_bet} and ${g.max_bet}` });
-    }
-
-    const controls = await getGameControls(gameId);
-    const { SecureRNG } = require('../../game-engine/engine');
-    const rng = new SecureRNG();
-
-    // Odds (decimal, includes stake return style for straight bets)
-    const ODDS = { meron: 1.95, wala: 1.95, draw: 8 };
-
-    // Determine fight winner under admin controls
-    // force_outcome: win = player's side wins, loss = player's side loses, null = RNG
-    let winner; // meron | wala | draw
-    const force = controls.force_outcome;
-    if (force === 'win') {
-      winner = side === 'draw' ? 'draw' : side;
-    } else if (force === 'loss') {
-      if (side === 'meron') winner = 'wala';
-      else if (side === 'wala') winner = 'meron';
-      else winner = rng.generate(1, 2) === 1 ? 'meron' : 'wala';
-    } else {
-      const roll = rng.generate(1, 100);
-      // Small natural draw chance (~4%) unless player bet draw (then use win_rate)
-      if (side === 'draw') {
-        winner = roll <= controls.win_rate ? 'draw' : (rng.generate(1, 2) === 1 ? 'meron' : 'wala');
-      } else {
-        const drawRoll = rng.generate(1, 100);
-        if (drawRoll <= 4) {
-          winner = 'draw';
-        } else if (roll <= controls.win_rate) {
-          winner = side; // player wins
-        } else {
-          winner = side === 'meron' ? 'wala' : 'meron';
-        }
-      }
-    }
-
-    const playerWon = winner === side;
-    let totalWin = 0;
-    if (playerWon) {
-      totalWin = parseFloat((betAmount * ODDS[side]).toFixed(2));
-    } else if (winner === 'draw' && side !== 'draw') {
-      // Straight bets push on draw (refund stake)
-      totalWin = betAmount;
-    }
-
-    // force_outcome=loss overrides winner — zero win, no push refund
-    if (controls.force_outcome === 'loss') { totalWin = 0; }
-
-    // HARD CAP — max_payout absolute, applied before min_payout floor
-    if (totalWin > 0 && controls.force_outcome !== 'loss' && controls.max_payout > 0) {
-      const hard = betAmount * controls.max_payout;
-      if (totalWin > hard) totalWin = parseFloat(hard.toFixed(2));
-    }
-    // Min payout floor — only on real wins
-    if (totalWin > 0 && controls.force_outcome !== 'loss') {
-      const mult = totalWin / betAmount;
-      if (controls.min_payout > 0 && mult < controls.min_payout) totalWin = parseFloat((betAmount * controls.min_payout).toFixed(2));
-    }
-    // Payout cap — clamp current win to remaining per-game allowance
-    if (controls.payout_cap > 0 && totalWin > 0) {
-      const sessionWin = await query(
-        "SELECT COALESCE(SUM(win_amount), 0) as total FROM game_rounds WHERE user_id = ? AND game_id = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)",
-        [req.user.id, gameId]
-      );
-      const gameAlreadyWon = parseFloat(sessionWin.rows[0].total) || 0;
-      const remaining = Math.max(0, controls.payout_cap - gameAlreadyWon);
-      if (remaining <= 0) totalWin = 0;
-      else if (totalWin > remaining) totalWin = parseFloat(remaining.toFixed(2));
-    }
-
-    if (!controls.dry_run) {
-      if (totalWin > 0) {
-        await creditWallet(req.user.id, totalWin, 'win', `Cockfight ${winner} on ${g.name}`, gameId);
-      }
-    }
-
-    await query(
-      'INSERT INTO game_rounds (id, game_id, user_id, bet_amount, win_amount, result, rng_seed) VALUES (UUID(),?,?,?,?,?,?)',
-      [gameId, req.user.id, betAmount, totalWin, JSON.stringify({
-        side, winner, playerWon, odds: ODDS[side], dry_run: !!controls.dry_run, force
-      }), 'cockfight']
-    );
-
-    const wallet = await query('SELECT balance FROM wallets WHERE user_id = ?', [req.user.id]);
-    res.json({
-      side,
-      winner,
-      playerWon: playerWon || (winner === 'draw' && side !== 'draw'), // push counts as non-loss UI
-      isPush: winner === 'draw' && side !== 'draw',
-      totalWin,
-      odds: ODDS[side],
-      balance: wallet.rows[0]?.balance ?? 0,
-      dryRun: !!controls.dry_run,
-      // Fight flavor for animation
-      rounds: rng.generate(3, 6),
-      critical: playerWon && totalWin >= betAmount * 3,
-    });
-  } catch (err) {
-    console.error('Cockfight error:', err);
-    res.status(400).json({ error: err.message });
-  }
-});
-
 
 module.exports = router;

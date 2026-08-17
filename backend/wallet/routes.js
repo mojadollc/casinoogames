@@ -50,10 +50,10 @@ router.get('/transactions', authenticate, async (req, res) => {
     const params = [req.user.id];
     const countParams = [req.user.id];
     if (type) {
-      sql += ' AND type LIKE ?';
-      params.push(type + '%');
-      countSql += ' AND type LIKE ?';
-      countParams.push(type + '%');
+      sql += ' AND type = ?';
+      params.push(type);
+      countSql += ' AND type = ?';
+      countParams.push(type);
     }
     sql += ` ORDER BY created_at DESC LIMIT ${limitNum} OFFSET ${offset}`;
 
@@ -160,34 +160,6 @@ const debitWallet = async (userId, amount, type, description, referenceId) => {
     client.release();
   }
 };
-
-// Wallet summary: winnings today, total winnings, total bets
-router.get('/summary', authenticate, async (req, res) => {
-  try {
-    const [todayWin, totalWin, totalBet] = await Promise.all([
-      query(
-        "SELECT COALESCE(SUM(amount),0) AS total FROM wallet_transactions WHERE user_id = ? AND type IN ('win','free_spin_win','jackpot') AND DATE(CONVERT_TZ(created_at,'+00:00','+08:00')) = CURDATE()",
-        [req.user.id]
-      ),
-      query(
-        "SELECT COALESCE(SUM(amount),0) AS total FROM wallet_transactions WHERE user_id = ? AND type IN ('win','free_spin_win','jackpot')",
-        [req.user.id]
-      ),
-      query(
-        "SELECT COALESCE(SUM(ABS(amount)),0) AS total FROM wallet_transactions WHERE user_id = ? AND type = 'bet'",
-        [req.user.id]
-      ),
-    ]);
-    res.json({
-      winnings_today: parseFloat(todayWin.rows[0].total) || 0,
-      winnings_total: parseFloat(totalWin.rows[0].total) || 0,
-      bets_total: parseFloat(totalBet.rows[0].total) || 0,
-    });
-  } catch (err) {
-    console.error('Summary error:', err.message);
-    res.status(500).json({ error: 'Failed to load summary' });
-  }
-});
 
 // Admin-only manual refund — players cannot self-refund (was an infinite-money exploit)
 router.post('/refund', authenticate, isAdmin, async (req, res) => {

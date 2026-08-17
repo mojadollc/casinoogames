@@ -4,55 +4,30 @@ const jwt = require('jsonwebtoken');
 const speakeasy = require('speakeasy');
 const qrcode = require('qrcode');
 const { query } = require('../config/database');
-const { authenticate, authLimiter, registerLimiter, refreshLimiter } = require('../middleware/auth');
-const { realIp } = require('../middleware/auth');
+const { authenticate, authLimiter } = require('../middleware/auth');
 const { body, validationResult } = require('express-validator');
 const { v4: uuidv4 } = require('uuid');
 const { createAffiliation } = require('../affiliation/routes');
 const { creditWallet } = require('../wallet/routes');
-const { geocodeAddress, reverseGeocode, parseCoords, mapsLink } = require('../utils/geocode');
 
 const router = express.Router();
 
-const DUMMY_HASH = '$2a$12$KIXBp/dummy.hash.to.prevent.timing.oracle.on.missing.user';
-
 const assertJwtConfig = () => {
-  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
-    throw new Error('JWT_SECRET must be at least 32 characters');
-  }
-  if (!process.env.JWT_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET.length < 32) {
-    throw new Error('JWT_REFRESH_SECRET must be at least 32 characters');
-  }
-  if (!process.env.JWT_EXPIRES_IN || !process.env.JWT_REFRESH_EXPIRES_IN) {
-    throw new Error('JWT expiry env vars are not configured');
+  if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
+    throw new Error('JWT secrets are not configured');
   }
 };
 
-// Sanitize helpers
-const sanitizeUsername = (u) => u?.trim().replace(/[^a-zA-Z0-9_]/g, '').slice(0, 50);
-const isStrongPassword = (p) => p && p.length >= 8 && /[A-Z]/.test(p) && /[0-9]/.test(p);
-
 // Register
-router.post('/register', registerLimiter, [
+router.post('/register', authLimiter, [
   body('username').isLength({ min: 3, max: 50 }).trim(),
   body('email').isEmail().normalizeEmail(),
   body('password').isLength({ min: 8 }),
 ], async (req, res) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) return res.status(400).json({ error: 'Invalid input. Check username (3-50 chars), email, and password (min 8 chars).' });
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-  const rawUsername = req.body.username;
-  const username = sanitizeUsername(rawUsername);
-  if (!username || username.length < 3) {
-    return res.status(400).json({ error: 'Username must be 3-50 characters and contain only letters, numbers, or underscores.' });
-  }
-
-  const { email, password, phone, ref } = req.body;
-
-  if (!isStrongPassword(password)) {
-    return res.status(400).json({ error: 'Password must be at least 8 characters and include one uppercase letter and one number.' });
-  }
-
+  const { username, email, password, phone, ref } = req.body;
   try {
     assertJwtConfig();
     const existing = await query('SELECT id FROM users WHERE email = ? OR username = ?', [email, username]);
@@ -60,27 +35,37 @@ router.post('/register', registerLimiter, [
 
     const id = uuidv4();
     const password_hash = await bcrypt.hash(password, 12);
+    // Generate unique referral code at registration
     let referral_code;
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     do {
       referral_code = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-      const dup = await query('SELECT id FROM users WHERE referral_code = ?', [referral_code]);
-      if (!dup.rows.length) break;
+      const existing = await query('SELECT id FROM users WHERE referral_code = ?', [referral_code]);
+      if (!existing.rows.length) break;
     } while (true);
 
     await query(
       'INSERT INTO users (id, username, email, password_hash, phone, referral_code) VALUES (?, ?, ?, ?, ?, ?)',
-      [id, username, email, password_hash, phone ? String(phone).slice(0, 20) : null, referral_code]
+      [id, username, email, password_hash, phone || null, referral_code]
     );
-    await query('INSERT INTO wallets (id, user_id) VALUES (UUID(), ?)', [id]);
-    if (ref) await createAffiliation(id, ref).catch(() => {});
+
+    const walletId = uuidv4();
+    await query('INSERT INTO wallets (id, user_id) VALUES (?, ?)', [walletId, id]);
+
+    // Handle referral
+    if (ref) {
+      await createAffiliation(id, ref);
+    }
 
     const token = jwt.sign({ userId: id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN });
     const refreshToken = jwt.sign({ userId: id }, process.env.JWT_REFRESH_SECRET, { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN });
+
+    const sessionId = uuidv4();
     await query(
       'INSERT INTO sessions (id, user_id, token, ip_address, user_agent, expires_at) VALUES (?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY))',
-      [uuidv4(), id, refreshToken, realIp(req), String(req.headers['user-agent'] || '').slice(0, 255)]
+      [sessionId, id, refreshToken, req.ip, req.headers['user-agent']]
     );
+
     res.status(201).json({ user: { id, username, email, referral_code }, token, refreshToken });
   } catch (err) {
     console.error('Register error:', err.message);
@@ -90,8 +75,8 @@ router.post('/register', registerLimiter, [
 
 // Login
 router.post('/login', authLimiter, [
-  body('email').isEmail().normalizeEmail(),
-  body('password').notEmpty().isLength({ max: 128 }),
+  body('email').isEmail(),
+  body('password').notEmpty()
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ error: 'Invalid email or password format' });
@@ -99,64 +84,33 @@ router.post('/login', authLimiter, [
   const { email, password, otp } = req.body;
   try {
     assertJwtConfig();
-    const result = await query(
-      'SELECT id, username, email, password_hash, status, two_factor_enabled, two_factor_secret, vip_level, role_id, failed_login_attempts, locked_until FROM users WHERE email = ?',
-      [email]
-    );
+    const result = await query('SELECT * FROM users WHERE email = ?', [email]);
     const user = result.rows[0];
 
-    // Always run bcrypt to prevent timing oracle — use dummy hash if user not found
-    const hashToCheck = user?.password_hash || DUMMY_HASH;
-    const match = await bcrypt.compare(password, hashToCheck);
+    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
-    if (!user || !match) {
-      // Increment failed attempts if user exists
-      if (user) {
-        const attempts = (user.failed_login_attempts || 0) + 1;
-        const lockUntil = attempts >= 5
-          ? new Date(Date.now() + 15 * 60 * 1000)  // lock 15 min after 5 failures
-          : null;
-        await query(
-          'UPDATE users SET failed_login_attempts = ?, locked_until = ? WHERE id = ?',
-          [attempts, lockUntil, user.id]
-        ).catch(() => {});
-      }
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
-    // Check account lock
-    if (user.locked_until && new Date(user.locked_until) > new Date()) {
-      const mins = Math.ceil((new Date(user.locked_until) - Date.now()) / 60000);
-      return res.status(423).json({ error: `Account temporarily locked. Try again in ${mins} minute(s).` });
-    }
+    const match = await bcrypt.compare(password, user.password_hash);
+    if (!match) return res.status(401).json({ error: 'Invalid credentials' });
 
     if (user.status !== 'active') return res.status(403).json({ error: 'Account suspended' });
 
     if (user.two_factor_enabled) {
       if (!otp) return res.status(200).json({ requires2FA: true });
-      const verified = speakeasy.totp.verify({
-        secret: user.two_factor_secret,
-        encoding: 'base32',
-        token: String(otp).replace(/\s/g, ''),
-        window: 1,
-      });
+      const verified = speakeasy.totp.verify({ secret: user.two_factor_secret, encoding: 'base32', token: otp });
       if (!verified) return res.status(401).json({ error: 'Invalid OTP' });
     }
 
-    // Reset failed attempts on success
-    await query(
-      'UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?',
-      [user.id]
-    ).catch(() => {});
-
     const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN });
     const refreshToken = jwt.sign({ userId: user.id }, process.env.JWT_REFRESH_SECRET, { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN });
+
+    const sessionId = uuidv4();
     await query(
       'INSERT INTO sessions (id, user_id, token, ip_address, user_agent, expires_at) VALUES (?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY))',
-      [uuidv4(), user.id, refreshToken, realIp(req), String(req.headers['user-agent'] || '').slice(0, 255)]
+      [sessionId, user.id, refreshToken, req.ip, req.headers['user-agent']]
     );
-    await query('INSERT INTO audit_logs (id, user_id, action, ip_address) VALUES (UUID(),?,?,?)',
-      [user.id, 'login', realIp(req)]);
+
+    await query('INSERT INTO audit_logs (id, user_id, action, ip_address) VALUES (?, ?, ?, ?)',
+      [uuidv4(), user.id, 'login', req.ip]);
 
     res.json({ user: { id: user.id, username: user.username, email: user.email, vip_level: user.vip_level, role_id: user.role_id }, token, refreshToken });
   } catch (err) {
@@ -166,7 +120,7 @@ router.post('/login', authLimiter, [
 });
 
 // Refresh token
-router.post('/refresh', refreshLimiter, async (req, res) => {
+router.post('/refresh', authLimiter, async (req, res) => {
   const { refreshToken } = req.body;
   if (!refreshToken) return res.status(400).json({ error: 'refreshToken is required' });
   try {
@@ -230,9 +184,6 @@ router.post('/kyc-bonus', authenticate, async (req, res) => {
     try { await query('ALTER TABLE users ADD COLUMN profile_image TEXT'); } catch {}
     try { await query('ALTER TABLE users ADD COLUMN address VARCHAR(500)'); } catch {}
     try { await query('ALTER TABLE users ADD COLUMN kyc_bonus_claimed JSON'); } catch {}
-    try { await query('ALTER TABLE users ADD COLUMN latitude DECIMAL(10,7) NULL'); } catch {}
-    try { await query('ALTER TABLE users ADD COLUMN longitude DECIMAL(10,7) NULL'); } catch {}
-    try { await query('ALTER TABLE users ADD COLUMN geocoded_address VARCHAR(500) NULL'); } catch {}
 
     const userResult = await query('SELECT kyc_bonus_claimed, profile_image, phone FROM users WHERE id = ?', [req.user.id]);
     const user = userResult.rows[0];
@@ -249,89 +200,17 @@ router.post('/kyc-bonus', authenticate, async (req, res) => {
 
     const updates = [];
     const params = [];
-    let geoResult = null;
 
     if (type === 'selfie') {
-      // Store actual selfie (base64 data URL). Cap size to avoid huge rows (~400KB).
-      if (!value || typeof value !== 'string') {
-        return res.status(400).json({ error: 'Selfie image is required' });
-      }
-      if (value.length > 550000) {
-        return res.status(400).json({ error: 'Selfie image is too large (max ~400KB). Please retake a smaller photo.' });
-      }
-      if (!value.startsWith('data:image/') && value !== 'verified') {
-        return res.status(400).json({ error: 'Invalid selfie image format' });
-      }
+      // value is either a base64 data URL or a URL string — store a flag, not the raw image
       updates.push('profile_image = ?');
-      params.push(value === 'verified' ? 'kyc_selfie_verified' : value);
+      params.push(value ? 'kyc_selfie_verified' : 'kyc_selfie_verified');
     } else if (type === 'phone' && value) {
       updates.push('phone = ?');
       params.push(String(value).trim());
     } else if (type === 'location' && value) {
-      let addr = '';
-      let clientCoords = null;
-
-      if (typeof value === 'object' && value !== null) {
-        addr = value.address ? String(value.address).trim() : '';
-        if (value.coords) clientCoords = parseCoords(String(value.coords));
-        if (value.lat != null && value.lng != null) {
-          clientCoords = { lat: parseFloat(value.lat), lng: parseFloat(value.lng) };
-        }
-      } else {
-        addr = String(value).trim();
-        // If user pasted pure coords as address
-        clientCoords = parseCoords(addr);
-      }
-
-      if (!addr && !clientCoords) {
-        return res.status(400).json({ error: 'Address is required' });
-      }
-
-      // Prefer typed address for storage; fall back to reverse-geocoded label
-      let storeAddress = addr;
-      let lat = clientCoords?.lat ?? null;
-      let lng = clientCoords?.lng ?? null;
-      let geocodedLabel = null;
-
-      // 1) If we only have coords → reverse geocode
-      if ((!storeAddress || clientCoords) && clientCoords) {
-        const rev = await reverseGeocode(clientCoords.lat, clientCoords.lng);
-        if (rev) {
-          lat = rev.lat;
-          lng = rev.lng;
-          geocodedLabel = rev.displayName;
-          if (!storeAddress) storeAddress = rev.displayName;
-        }
-      }
-
-      // 2) Forward geocode typed address (always try so admin gets map pin)
-      if (storeAddress) {
-        geoResult = await geocodeAddress(storeAddress);
-        if (geoResult) {
-          // Prefer geocoded coords unless client GPS was provided
-          if (lat == null || lng == null) {
-            lat = geoResult.lat;
-            lng = geoResult.lng;
-          }
-          geocodedLabel = geoResult.displayName;
-        }
-      }
-
-      if (!storeAddress) {
-        return res.status(400).json({ error: 'Address is required' });
-      }
-
       updates.push('address = ?');
-      params.push(storeAddress.slice(0, 500));
-
-      if (lat != null && lng != null && Number.isFinite(lat) && Number.isFinite(lng)) {
-        updates.push('latitude = ?', 'longitude = ?');
-        params.push(lat, lng);
-      }
-      if (geocodedLabel) {
-        updates.push('geocoded_address = ?');
-        params.push(String(geocodedLabel).slice(0, 500));
-      }
+      params.push(typeof value === 'object' ? JSON.stringify(value) : String(value));
     }
 
     claimed[type] = true;
@@ -351,84 +230,10 @@ router.post('/kyc-bonus', authenticate, async (req, res) => {
     );
 
     const allClaimed = Object.keys(KYC_BONUS).every(k => claimed[k]);
-    const payload = { message: `\u20b1${amount} bonus credited!`, amount, allClaimed, claimed };
-    if (type === 'location' && geoResult) {
-      payload.geocoded = {
-        lat: geoResult.lat,
-        lng: geoResult.lng,
-        displayName: geoResult.displayName,
-        mapsUrl: mapsLink(geoResult.lat, geoResult.lng),
-      };
-    }
-    res.json(payload);
+    res.json({ message: `\u20b1${amount} bonus credited!`, amount, allClaimed, claimed });
   } catch (err) {
     console.error('KYC bonus error:', err.message, err.stack);
     res.status(500).json({ error: 'Failed to process bonus' });
-  }
-});
-
-// Change Password
-router.put('/change-password', authenticate, [
-  body('current_password').notEmpty(),
-  body('new_password').isLength({ min: 8 }),
-], async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) return res.status(400).json({ error: 'New password must be at least 8 characters' });
-  const { current_password, new_password } = req.body;
-  try {
-    const result = await query('SELECT password_hash FROM users WHERE id = ?', [req.user.id]);
-    const match = await bcrypt.compare(current_password, result.rows[0].password_hash);
-    if (!match) return res.status(401).json({ error: 'Current password is incorrect' });
-    const hash = await bcrypt.hash(new_password, 12);
-    await query('UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?', [hash, req.user.id]);
-    await query('INSERT INTO audit_logs (id, user_id, action, ip_address) VALUES (UUID(),?,?,?)', [req.user.id, 'change_password', req.ip]);
-    res.json({ message: 'Password updated successfully' });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to change password' });
-  }
-});
-
-// Change Username
-router.put('/change-username', authenticate, [
-  body('username').isLength({ min: 3, max: 50 }).trim(),
-  body('password').notEmpty(),
-], async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) return res.status(400).json({ error: 'Username must be 3–50 characters' });
-  const { username, password } = req.body;
-  try {
-    const result = await query('SELECT password_hash FROM users WHERE id = ?', [req.user.id]);
-    const match = await bcrypt.compare(password, result.rows[0].password_hash);
-    if (!match) return res.status(401).json({ error: 'Password is incorrect' });
-    const existing = await query('SELECT id FROM users WHERE username = ? AND id != ?', [username, req.user.id]);
-    if (existing.rows.length) return res.status(409).json({ error: 'Username already taken' });
-    await query('UPDATE users SET username = ?, updated_at = NOW() WHERE id = ?', [username, req.user.id]);
-    await query('INSERT INTO audit_logs (id, user_id, action, ip_address) VALUES (UUID(),?,?,?)', [req.user.id, 'change_username', req.ip]);
-    res.json({ message: 'Username updated successfully' });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to change username' });
-  }
-});
-
-// Change Email
-router.put('/change-email', authenticate, [
-  body('email').isEmail().normalizeEmail(),
-  body('password').notEmpty(),
-], async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) return res.status(400).json({ error: 'Invalid email format' });
-  const { email, password } = req.body;
-  try {
-    const result = await query('SELECT password_hash FROM users WHERE id = ?', [req.user.id]);
-    const match = await bcrypt.compare(password, result.rows[0].password_hash);
-    if (!match) return res.status(401).json({ error: 'Password is incorrect' });
-    const existing = await query('SELECT id FROM users WHERE email = ? AND id != ?', [email, req.user.id]);
-    if (existing.rows.length) return res.status(409).json({ error: 'Email already in use' });
-    await query('UPDATE users SET email = ?, updated_at = NOW() WHERE id = ?', [email, req.user.id]);
-    await query('INSERT INTO audit_logs (id, user_id, action, ip_address) VALUES (UUID(),?,?,?)', [req.user.id, 'change_email', req.ip]);
-    res.json({ message: 'Email updated successfully' });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to change email' });
   }
 });
 

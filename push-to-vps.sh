@@ -60,10 +60,7 @@ rsync -avz --delete \
   --exclude='frontend/dist' \
   --exclude='*.log' \
   --exclude='.env' \
-  --exclude='backend/uploads' \
-  --exclude='backend/uploads/**' \
-  --exclude='uploads' \
-  --exclude='uploads/**' \
+  --exclude='backend/uploads/*' \
   ./ "$VPS_USER@$VPS_IP:$APP_DIR/"
 
 echo "✓ Files synced"

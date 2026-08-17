@@ -1,25 +1,14 @@
 const express = require('express');
 const path = require('path');
-const fs = require('fs');
 const multer = require('multer');
 const { query } = require('../config/database');
 const { authenticate, isAdmin } = require('../middleware/auth');
 const { creditWallet } = require('../wallet/routes');
 
-// Persistent upload dirs — must match server.js (survives PM2 restart; excluded from deploy --delete)
-const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '../uploads');
-const THUMB_DIR = path.join(UPLOAD_DIR, 'thumbnails');
-for (const dir of [UPLOAD_DIR, THUMB_DIR]) {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-}
-
 const thumbnailStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    if (!fs.existsSync(THUMB_DIR)) fs.mkdirSync(THUMB_DIR, { recursive: true });
-    cb(null, THUMB_DIR);
-  },
+  destination: path.join(__dirname, '../uploads/thumbnails'),
   filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase() || '.png';
+    const ext = path.extname(file.originalname).toLowerCase();
     cb(null, `game_${req.params.id}_${Date.now()}${ext}`);
   },
 });
@@ -33,19 +22,9 @@ const upload = multer({
 });
 
 const logoStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-    cb(null, UPLOAD_DIR);
-  },
+  destination: path.join(__dirname, '../uploads'),
   filename: (req, file, cb) => {
-    // Always store as logo.<ext> so URL stays stable
-    const ext = path.extname(file.originalname).toLowerCase() || '.png';
-    // Remove any previous logo.* so extension changes don't leave orphans
-    try {
-      for (const f of fs.readdirSync(UPLOAD_DIR)) {
-        if (/^logo\./i.test(f)) fs.unlinkSync(path.join(UPLOAD_DIR, f));
-      }
-    } catch {}
+    const ext = path.extname(file.originalname).toLowerCase();
     cb(null, `logo${ext}`);
   },
 });
@@ -82,12 +61,9 @@ router.get('/dashboard', adminAuth, async (req, res) => {
       try { return await query(sql); } catch { return fallback; }
     };
 
-    // Money stats: only count successful (completed) money movement.
-    // Pending/canceled/expired Xendit invoices must NOT inflate "Today Deposits".
-    const [deposits, pendingDeposits, withdrawals, bets, wins, activeGames, totalDeposited] = await Promise.all([
-      query("SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count FROM deposit_requests WHERE status = 'completed' AND created_at > NOW() - INTERVAL 1 DAY"),
-      query("SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count FROM deposit_requests WHERE status = 'pending' AND created_at > NOW() - INTERVAL 1 DAY"),
-      query("SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count FROM withdrawal_requests WHERE status IN ('completed','approved') AND created_at > NOW() - INTERVAL 1 DAY"),
+    const [deposits, withdrawals, bets, wins, activeGames, totalDeposited] = await Promise.all([
+      query("SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count FROM deposit_requests WHERE created_at > NOW() - INTERVAL 1 DAY"),
+      query("SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count FROM withdrawal_requests WHERE created_at > NOW() - INTERVAL 1 DAY"),
       query("SELECT COALESCE(SUM(bet_amount), 0) as total, COUNT(*) as count FROM game_rounds WHERE created_at > NOW() - INTERVAL 1 DAY"),
       query("SELECT COALESCE(SUM(win_amount), 0) as total FROM game_rounds WHERE created_at > NOW() - INTERVAL 1 DAY"),
       query("SELECT COUNT(*) as count FROM games WHERE status = 'active'"),
@@ -109,7 +85,6 @@ router.get('/dashboard', adminAuth, async (req, res) => {
       onlinePlayers: onlineUsers.size || parseInt(onlineRow.rows[0].count),
       dailyRevenue: parseFloat(dailyRevenue.toFixed(2)),
       deposits: { total: parseFloat(deposits.rows[0].total), count: parseInt(deposits.rows[0].count) },
-      pendingDeposits: { total: parseFloat(pendingDeposits.rows[0].total), count: parseInt(pendingDeposits.rows[0].count) },
       withdrawals: { total: parseFloat(withdrawals.rows[0].total), count: parseInt(withdrawals.rows[0].count) },
       bets: { total: totalBets, count: parseInt(bets.rows[0].count) },
       wins: totalWins,
@@ -123,225 +98,48 @@ router.get('/dashboard', adminAuth, async (req, res) => {
   }
 });
 
-// Player management — show ALL non-admin users (not only role_id = 1)
+// Player management
 router.get('/players', adminAuth, async (req, res) => {
   try {
-    const { search, page = 1, limit = 20, kyc_status, status } = req.query;
-    const offset = Math.max(0, (parseInt(page, 10) || 1) - 1) * (parseInt(limit, 10) || 20);
-    const lim = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
-
-    // Detect optional columns (migrations 004 / 008)
-    let hasKycCols = true;
-    let hasGeoCols = true;
-    try {
-      await query('SELECT profile_image, address, kyc_bonus_claimed FROM users LIMIT 1');
-    } catch {
-      hasKycCols = false;
-    }
-    try {
-      await query('SELECT latitude, longitude, geocoded_address FROM users LIMIT 1');
-    } catch {
-      hasGeoCols = false;
-    }
-
-    const kycSelect = hasKycCols
-      ? ', u.profile_image, u.address, u.kyc_bonus_claimed'
-      : ', NULL as profile_image, NULL as address, NULL as kyc_bonus_claimed';
-    const geoSelect = hasGeoCols
-      ? ', u.latitude, u.longitude, u.geocoded_address'
-      : ', NULL as latitude, NULL as longitude, NULL as geocoded_address';
-
-    // Exclude admin / superadmin by role name (works even if role ids differ)
-    // Also include users with NULL role_id or unknown roles so no player is hidden
-    let where = `WHERE (
-      u.role_id IS NULL
-      OR u.role_id NOT IN (SELECT id FROM roles WHERE name IN ('admin', 'superadmin'))
-      OR NOT EXISTS (SELECT 1 FROM roles r WHERE r.id = u.role_id AND r.name IN ('admin', 'superadmin'))
-    )`;
-    const params = [];
-
-    const term = (search || '').trim();
-    if (term) {
-      if (hasKycCols) {
-        where += ' AND (u.username LIKE ? OR u.email LIKE ? OR IFNULL(u.phone,\'\') LIKE ? OR IFNULL(u.address,\'\') LIKE ?)';
-        const q = `%${term}%`;
-        params.push(q, q, q, q);
-      } else {
-        where += ' AND (u.username LIKE ? OR u.email LIKE ? OR IFNULL(u.phone,\'\') LIKE ?)';
-        const q = `%${term}%`;
-        params.push(q, q, q);
-      }
-    }
-    if (kyc_status) {
-      where += ' AND u.kyc_status = ?';
-      params.push(kyc_status);
-    }
-    if (status) {
-      where += ' AND u.status = ?';
-      params.push(status);
-    }
-
-    const sql = `SELECT u.id, u.username, u.email, u.phone, u.vip_level, u.kyc_status, u.status, u.created_at,
-      u.role_id ${kycSelect}${geoSelect},
+    const { search, page = 1, limit = 20 } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    let sql = `SELECT u.id, u.username, u.email, u.phone, u.vip_level, u.kyc_status, u.status, u.created_at,
       COALESCE(w.balance, 0) as balance
-      FROM users u
-      LEFT JOIN wallets w ON w.user_id = u.id
-      ${where}
-      ORDER BY u.created_at DESC
-      LIMIT ${lim} OFFSET ${offset}`;
+      FROM users u LEFT JOIN wallets w ON w.user_id = u.id`;
+    const params = [];
+    if (search) {
+      sql += ' WHERE u.username LIKE ? OR u.email LIKE ?';
+      params.push(`%${search}%`, `%${search}%`);
+    }
+    // Exclude admin/superadmin accounts from player list
+    sql += search ? ' AND u.role_id = 1' : ' WHERE u.role_id = 1';
+    sql += ' ORDER BY u.created_at DESC LIMIT ? OFFSET ?';
+    params.push(parseInt(limit), offset);
 
-    const countSql = `SELECT COUNT(*) as total FROM users u ${where}`;
+    const countSql = `SELECT COUNT(*) as total FROM users u WHERE u.role_id = 1${search ? ' AND (u.username LIKE ? OR u.email LIKE ?)' : ''}`;
+    const countParams = search ? [`%${search}%`, `%${search}%`] : [];
 
-    let result;
-    let countResult;
+    const [result, countResult] = await Promise.all([
+      query(sql, params),
+      query(countSql, countParams),
+    ]);
+
+    // Try to get extra KYC columns if migration 004 ran
+    let rows = result.rows;
     try {
-      [result, countResult] = await Promise.all([
-        query(sql, params),
-        query(countSql, params),
-      ]);
-    } catch (primaryErr) {
-      // Fallback: simplest query so the panel never stays empty
-      console.error('Players primary query failed, using fallback:', primaryErr.message);
-      const fallbackSql = `SELECT u.id, u.username, u.email, u.phone, u.vip_level, u.kyc_status, u.status, u.created_at,
-        u.role_id, NULL as profile_image, NULL as address, NULL as kyc_bonus_claimed,
-        NULL as latitude, NULL as longitude, NULL as geocoded_address,
-        COALESCE(w.balance, 0) as balance
-        FROM users u
-        LEFT JOIN wallets w ON w.user_id = u.id
-        WHERE u.role_id IS NULL OR u.role_id <= 1 OR u.role_id NOT IN (
-          SELECT id FROM roles WHERE name IN ('admin', 'superadmin')
-        )
-        ORDER BY u.created_at DESC
-        LIMIT ${lim} OFFSET ${offset}`;
-      const fallbackCount = `SELECT COUNT(*) as total FROM users u
-        WHERE u.role_id IS NULL OR u.role_id <= 1 OR u.role_id NOT IN (
-          SELECT id FROM roles WHERE name IN ('admin', 'superadmin')
-        )`;
-      [result, countResult] = await Promise.all([
-        query(fallbackSql, []),
-        query(fallbackCount, []),
-      ]);
-    }
+      const extra = await query(
+        `SELECT id, profile_image, address, kyc_bonus_claimed FROM users WHERE role_id = 1${search ? ' AND (username LIKE ? OR email LIKE ?)' : ''} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+        search ? [`%${search}%`, `%${search}%`, parseInt(limit), offset] : [parseInt(limit), offset]
+      );
+      const extraMap = {};
+      extra.rows.forEach(r => { extraMap[r.id] = r; });
+      rows = rows.map(r => ({ ...r, ...extraMap[r.id] }));
+    } catch {} // migration 004 not run yet — skip gracefully
 
-    const rows = (result.rows || []).map((r) => {
-      let claimed = r.kyc_bonus_claimed;
-      if (typeof claimed === 'string') {
-        try { claimed = JSON.parse(claimed); } catch { claimed = {}; }
-      }
-      const lat = r.latitude != null ? parseFloat(r.latitude) : null;
-      const lng = r.longitude != null ? parseFloat(r.longitude) : null;
-      const img = r.profile_image;
-      return {
-        ...r,
-        latitude: lat,
-        longitude: lng,
-        maps_url: (lat != null && lng != null) ? `https://www.google.com/maps?q=${lat},${lng}` : null,
-        kyc_bonus_claimed: claimed || {},
-        has_selfie: !!(img && img !== 'kyc_selfie_verified'),
-        profile_image: img && String(img).startsWith('data:image/')
-          ? img
-          : (img === 'kyc_selfie_verified' ? null : img),
-      };
-    });
-
-    res.json({ players: rows, total: parseInt(countResult.rows[0]?.total || 0, 10) });
+    res.json({ players: rows, total: parseInt(countResult.rows[0].total) });
   } catch (err) {
-    console.error('Players error:', err.message, err.stack);
-    res.status(500).json({ error: 'Failed to load players', detail: err.message });
-  }
-});
-
-// Single player detail (full KYC + selfie + geocode)
-router.get('/players/:id', adminAuth, async (req, res) => {
-  try {
-    let hasKycCols = true;
-    let hasGeoCols = true;
-    try {
-      await query('SELECT profile_image, address, kyc_bonus_claimed FROM users LIMIT 1');
-    } catch {
-      hasKycCols = false;
-    }
-    try {
-      await query('SELECT latitude, longitude, geocoded_address FROM users LIMIT 1');
-    } catch {
-      hasGeoCols = false;
-    }
-    const kycSelect = hasKycCols
-      ? ', u.profile_image, u.address, u.kyc_bonus_claimed'
-      : ', NULL as profile_image, NULL as address, NULL as kyc_bonus_claimed';
-    const geoSelect = hasGeoCols
-      ? ', u.latitude, u.longitude, u.geocoded_address'
-      : ', NULL as latitude, NULL as longitude, NULL as geocoded_address';
-
-    const result = await query(
-      `SELECT u.id, u.username, u.email, u.phone, u.vip_level, u.kyc_status, u.status, u.created_at, u.updated_at
-       ${kycSelect}${geoSelect},
-       COALESCE(w.balance, 0) as balance, COALESCE(w.bonus_balance, 0) as bonus_balance
-       FROM users u LEFT JOIN wallets w ON w.user_id = u.id
-       WHERE u.id = ?
-        AND (
-          u.role_id IS NULL
-          OR u.role_id NOT IN (SELECT id FROM roles WHERE name IN ('admin', 'superadmin'))
-        )`,
-      [req.params.id]
-    );
-    if (!result.rows?.length) return res.status(404).json({ error: 'Player not found' });
-    const row = result.rows[0];
-    let claimed = row.kyc_bonus_claimed;
-    if (typeof claimed === 'string') {
-      try { claimed = JSON.parse(claimed); } catch { claimed = {}; }
-    }
-    const lat = row.latitude != null ? parseFloat(row.latitude) : null;
-    const lng = row.longitude != null ? parseFloat(row.longitude) : null;
-    res.json({
-      ...row,
-      latitude: lat,
-      longitude: lng,
-      maps_url: (lat != null && lng != null) ? `https://www.google.com/maps?q=${lat},${lng}` : null,
-      kyc_bonus_claimed: claimed || {},
-      has_selfie: !!(row.profile_image && row.profile_image !== 'kyc_selfie_verified'),
-    });
-  } catch (err) {
-    console.error('Player detail error:', err.message);
-    res.status(500).json({ error: 'Failed to load player' });
-  }
-});
-
-// Re-geocode a player's address (admin)
-router.post('/players/:id/geocode', adminAuth, async (req, res) => {
-  try {
-    const { geocodeAddress, mapsLink } = require('../utils/geocode');
-    try { await query('ALTER TABLE users ADD COLUMN latitude DECIMAL(10,7) NULL'); } catch {}
-    try { await query('ALTER TABLE users ADD COLUMN longitude DECIMAL(10,7) NULL'); } catch {}
-    try { await query('ALTER TABLE users ADD COLUMN geocoded_address VARCHAR(500) NULL'); } catch {}
-
-    const result = await query(
-      `SELECT id, address FROM users WHERE id = ?
-       AND (role_id IS NULL OR role_id NOT IN (SELECT id FROM roles WHERE name IN ('admin', 'superadmin')))`,
-      [req.params.id]
-    );
-    if (!result.rows?.length) return res.status(404).json({ error: 'Player not found' });
-    const address = req.body?.address || result.rows[0].address;
-    if (!address) return res.status(400).json({ error: 'No address to geocode' });
-
-    const geo = await geocodeAddress(address);
-    if (!geo) return res.status(422).json({ error: 'Could not geocode this address' });
-
-    await query(
-      'UPDATE users SET latitude = ?, longitude = ?, geocoded_address = ?, updated_at = NOW() WHERE id = ?',
-      [geo.lat, geo.lng, geo.displayName.slice(0, 500), req.params.id]
-    );
-
-    res.json({
-      message: 'Address geocoded',
-      latitude: geo.lat,
-      longitude: geo.lng,
-      geocoded_address: geo.displayName,
-      maps_url: mapsLink(geo.lat, geo.lng),
-    });
-  } catch (err) {
-    console.error('Admin geocode error:', err.message);
-    res.status(500).json({ error: 'Geocode failed' });
+    console.error('Players error:', err.message);
+    res.status(500).json({ error: 'Failed to load players' });
   }
 });
 
@@ -584,7 +382,7 @@ router.get('/roles', adminAuth, async (req, res) => {
   res.json(result.rows);
 });
 
-// Platform settings (logo, etc.) — PUBLIC, no auth required
+// Platform settings (logo, etc.)
 router.get('/settings', async (req, res) => {
   try {
     await query('CREATE TABLE IF NOT EXISTS platform_settings (`key` VARCHAR(100) PRIMARY KEY, value TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)');
@@ -599,7 +397,9 @@ router.get('/settings', async (req, res) => {
 });
 
 router.post('/settings/logo', adminAuth, (req, res, next) => {
-  // Dirs ensured by UPLOAD_DIR setup + multer destination callback
+  const fs = require('fs');
+  const uploadsDir = path.join(__dirname, '../uploads');
+  if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
   uploadLogo.single('logo')(req, res, (err) => {
     if (err) {
       if (err.code === 'LIMIT_FILE_SIZE') {

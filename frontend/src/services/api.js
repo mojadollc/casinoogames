@@ -13,39 +13,17 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   async (err) => {
-    const status = err.response?.status;
-    const cfg = err.config || {};
-
-    // Rate limit — never log the user out; optional short retry
-    if (status === 429) {
-      const retryAfter = Number(err.response?.data?.retryAfter || err.response?.headers?.['retry-after'] || 2);
-      if (!cfg._rateRetry && retryAfter <= 5) {
-        cfg._rateRetry = true;
-        await new Promise((r) => setTimeout(r, retryAfter * 1000));
-        return api(cfg);
-      }
-      // Surface a clean error for UI (games keep running)
-      err.message = err.response?.data?.error || 'Too many requests — please wait a moment.';
-      return Promise.reject(err);
-    }
-
-    // Auth refresh — only logout on real auth failure, not network/429
-    if (status === 401 && !cfg._retry) {
-      cfg._retry = true;
+    if (err.response?.status === 401 && !err.config._retry) {
+      err.config._retry = true;
       try {
         const refreshToken = localStorage.getItem('refreshToken');
         if (!refreshToken) throw new Error('No refresh token');
         const { data } = await axios.post(`${API_URL}/auth/refresh`, { refreshToken });
         localStorage.setItem('token', data.token);
-        cfg.headers = cfg.headers || {};
-        cfg.headers.Authorization = `Bearer ${data.token}`;
-        return api(cfg);
-      } catch (refreshErr) {
-        const rs = refreshErr.response?.status;
-        // Do not wipe session on rate-limit or transient errors
-        if (rs === 429 || !rs) {
-          return Promise.reject(refreshErr);
-        }
+        err.config.headers.Authorization = `Bearer ${data.token}`;
+        return api(err.config);
+      } catch {
+        // Clear everything and redirect to login
         localStorage.removeItem('token');
         localStorage.removeItem('refreshToken');
         localStorage.removeItem('cached_user');
@@ -68,15 +46,11 @@ export const authAPI = {
   enable2FA: () => api.post('/auth/2fa/enable'),
   verify2FA: (otp) => api.post('/auth/2fa/verify', { otp }),
   logout: () => api.post('/auth/logout', { refreshToken: localStorage.getItem('refreshToken') }),
-  changePassword: (current_password, new_password) => api.put('/auth/change-password', { current_password, new_password }),
-  changeEmail: (email, password) => api.put('/auth/change-email', { email, password }),
-  changeUsername: (username, password) => api.put('/auth/change-username', { username, password }),
 };
 
 export const walletAPI = {
   balance: () => api.get('/wallet/balance'),
   transactions: (params) => api.get('/wallet/transactions', { params }),
-  summary: () => api.get('/wallet/summary'),
 };
 
 export const paymentAPI = {
@@ -90,8 +64,7 @@ export const gameAPI = {
   details: (slug) => api.get(`/games/${slug}`),
   spin: (gameId, betAmount) => api.post(`/games/${gameId}/spin`, { betAmount }),
   freeSpin: (gameId) => api.post(`/games/${gameId}/free-spin`),
-  cockfight: (gameId, betAmount, side) => api.post(`/games/${gameId}/cockfight`, { betAmount, side }),
-  fishingShoot: (gameId, betAmount, extra = {}) => api.post(`/games/${gameId}/fishing-shoot`, { betAmount, ...extra }),
+  fishingShoot: (gameId, betAmount) => api.post(`/games/${gameId}/fishing-shoot`, { betAmount }),
   play: (gameId, payload) => api.post(`/games/${gameId}/play`, payload),
   history: (gameId) => api.get(`/games/${gameId}/history`),
   jackpotTotal: () => api.get('/games/jackpots/total'),
@@ -114,8 +87,6 @@ export const notifAPI = {
 export const adminAPI = {
   dashboard: () => api.get('/admin/dashboard'),
   players: (params) => api.get('/admin/players', { params }),
-  player: (id) => api.get(`/admin/players/${id}`),
-  geocodePlayer: (id, address) => api.post(`/admin/players/${id}/geocode`, address ? { address } : {}),
   updatePlayerStatus: (id, status) => api.put(`/admin/players/${id}/status`, { status }),
   updateKYC: (id, status) => api.put(`/admin/players/${id}/kyc`, { kyc_status: status }),
   wallets: () => api.get('/admin/wallets'),
@@ -147,12 +118,10 @@ export const adminAPI = {
   getGameControls: (gameId) => api.get(`/games/${gameId}/controls`),
   setGameControls: (gameId, data) => api.put(`/games/${gameId}/controls`, data),
   bulkSetWinRate: (win_rate, gameIds) => api.put('/games/bulk/win-rate', { win_rate, game_ids: gameIds }),
-  bulkSetForceOutcome: (force_outcome, gameIds) => api.put('/games/bulk/force-outcome', { force_outcome, game_ids: gameIds }),
   forceOutcome: (gameId, data) => api.post(`/games/${gameId}/force-outcome`, data),
   setPlayerClass: (gameId, data) => api.post(`/games/${gameId}/player-class`, data),
   triggerJackpot: (gameId, userId) => api.post(`/games/${gameId}/trigger-jackpot`, { user_id: userId }),
   getGameStats: (gameId) => api.get(`/games/${gameId}/stats`),
-  getOnlinePlayers: () => api.get('/games/online-players'),
 };
 
 export const affiliationAPI = {

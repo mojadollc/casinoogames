@@ -34,28 +34,16 @@ router.post('/deposit', authenticate, async (req, res) => {
       currency: 'PHP',
       description: `Deposit for ${req.user.username}`,
       payment_methods: payment_method ? [payment_method] : undefined,
-      success_redirect_url: `${process.env.FRONTEND_URL}/wallet?deposit=success`,
-      failure_redirect_url: `${process.env.FRONTEND_URL}/wallet?deposit=failed`
+      success_redirect_url: `${process.env.FRONTEND_URL}/wallet?status=success`,
+      failure_redirect_url: `${process.env.FRONTEND_URL}/wallet?status=failed`
     });
 
-    const client = await getClient();
-    try {
-      await client.BEGIN();
-      await client.query(
-        'INSERT INTO payment_transactions (id, user_id, type, amount, provider_ref, status, metadata) VALUES (UUID(),?,?,?,?,?,?)',
-        [req.user.id, 'deposit', value, invoice.data.id, 'pending', JSON.stringify({ invoice_url: invoice.data.invoice_url })]
-      );
-      await client.query(
-        'INSERT INTO deposit_requests (id, user_id, amount, payment_method, provider_ref) VALUES (UUID(),?,?,?,?)',
-        [req.user.id, value, payment_method || null, invoice.data.id]
-      );
-      await client.COMMIT();
-    } catch (dbErr) {
-      await client.ROLLBACK();
-      throw dbErr;
-    } finally {
-      client.release();
-    }
+    await query(
+      'INSERT INTO payment_transactions (id, user_id, type, amount, provider_ref, status, metadata) VALUES (UUID(),?,?,?,?,?,?)',
+      [req.user.id, 'deposit', value, invoice.data.id, 'pending', JSON.stringify({ invoice_url: invoice.data.invoice_url })]
+    );
+    await query('INSERT INTO deposit_requests (id, user_id, amount, payment_method, provider_ref) VALUES (UUID(),?,?,?,?)',
+      [req.user.id, value, payment_method || null, invoice.data.id]);
 
     res.json({ invoice_url: invoice.data.invoice_url, id: invoice.data.id });
   } catch (err) {
@@ -154,13 +142,8 @@ const processPayout = async (withdrawalId) => {
 
 // Webhook handler (also exported for direct route mounting)
 const webhookHandler = async (req, res) => {
-  // Guard: if webhook token env is not set, reject all webhook calls
-  if (!process.env.XENDIT_WEBHOOK_TOKEN) {
-    console.error('XENDIT_WEBHOOK_TOKEN not configured — rejecting webhook');
-    return res.status(401).json({ error: 'Webhook not configured' });
-  }
   const webhookToken = req.headers['x-callback-token'];
-  if (!webhookToken || webhookToken !== process.env.XENDIT_WEBHOOK_TOKEN) {
+  if (webhookToken !== process.env.XENDIT_WEBHOOK_TOKEN) {
     return res.status(401).json({ error: 'Invalid webhook token' });
   }
 
@@ -236,6 +219,8 @@ const webhookHandler = async (req, res) => {
     res.status(500).json({ error: 'Webhook processing failed' });
   }
 };
+router.post('/webhook', webhookHandler);
+
 // Payment history
 router.get('/history', authenticate, async (req, res) => {
   const result = await query(
