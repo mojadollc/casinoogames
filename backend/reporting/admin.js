@@ -143,6 +143,48 @@ router.get('/players', adminAuth, async (req, res) => {
   }
 });
 
+// Single player detail
+router.get('/players/:id', adminAuth, async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT u.id, u.username, u.email, u.phone, u.vip_level, u.kyc_status, u.status, u.created_at,
+        u.profile_image, u.address, u.kyc_bonus_claimed, u.latitude, u.longitude,
+        u.geocoded_address, u.maps_url,
+        COALESCE(w.balance, 0) as balance
+       FROM users u LEFT JOIN wallets w ON w.user_id = u.id
+       WHERE u.id = ?`, [req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Player not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Geocode player address
+router.post('/players/:id/geocode', adminAuth, async (req, res) => {
+  try {
+    const { geocodeAddress } = require('../utils/geocode');
+    const userResult = await query('SELECT address FROM users WHERE id = ?', [req.params.id]);
+    const user = userResult.rows[0];
+    if (!user?.address) return res.status(400).json({ error: 'No address to geocode' });
+    const geo = await geocodeAddress(user.address);
+    if (!geo) return res.status(422).json({ error: 'Could not geocode address' });
+    try { await query('ALTER TABLE users ADD COLUMN latitude DECIMAL(10,7) NULL'); } catch {}
+    try { await query('ALTER TABLE users ADD COLUMN longitude DECIMAL(10,7) NULL'); } catch {}
+    try { await query('ALTER TABLE users ADD COLUMN geocoded_address VARCHAR(500) NULL'); } catch {}
+    try { await query('ALTER TABLE users ADD COLUMN maps_url VARCHAR(500) NULL'); } catch {}
+    const mapsUrl = `https://www.google.com/maps?q=${geo.lat},${geo.lng}`;
+    await query(
+      'UPDATE users SET latitude=?, longitude=?, geocoded_address=?, maps_url=? WHERE id=?',
+      [geo.lat, geo.lng, geo.displayName, mapsUrl, req.params.id]
+    );
+    res.json({ latitude: geo.lat, longitude: geo.lng, geocoded_address: geo.displayName, maps_url: mapsUrl });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.put('/players/:id/status', adminAuth, async (req, res) => {
   const { status } = req.body;
   const allowed = ['active', 'suspended', 'banned', 'pending'];
@@ -429,21 +471,21 @@ router.post('/settings/logo', adminAuth, (req, res, next) => {
 // Online players by game — last 5 minutes of activity
 router.get('/online-players', authenticate, isAdmin, async (req, res) => {
   try {
-    const result = await safe(
-      `SELECT g.id AS game_id, g.name AS game_name, g.slug AS game_slug, g.type AS game_type,
-              COUNT(DISTINCT gs.user_id) AS online_players
-       FROM games g
-       LEFT JOIN game_sessions gs
-         ON gs.game_id = g.id AND gs.updated_at >= DATE_SUB(NOW(), INTERVAL 5 MINUTE)
-       WHERE g.is_active = 1
-       GROUP BY g.id, g.name, g.slug, g.type
-       ORDER BY online_players DESC, g.name ASC`,
-      []
-    );
-    res.json({
-      totalOnline: onlineUsers.size,
-      games: result?.rows || [],
-    });
+    let games = [];
+    try {
+      const result = await query(
+        `SELECT g.id AS game_id, g.name AS game_name, g.slug AS game_slug, g.type AS game_type,
+                COUNT(DISTINCT gs.user_id) AS online_players
+         FROM games g
+         LEFT JOIN game_sessions gs
+           ON gs.game_id = g.id AND gs.updated_at >= DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+         WHERE g.is_active = 1
+         GROUP BY g.id, g.name, g.slug, g.type
+         ORDER BY online_players DESC, g.name ASC`
+      );
+      games = result?.rows || [];
+    } catch {}
+    res.json({ totalOnline: onlineUsers.size, games });
   } catch (err) {
     console.error('Online players error:', err.message);
     res.status(500).json({ error: 'Failed to load online players' });

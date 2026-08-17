@@ -572,7 +572,7 @@ export default function PixiSlotReels({
       if (onLoadingChange) onLoadingChange({ loading: true, progress: 0, stage: 'init' });
       
       await app.init({ resizeTo: hostRef.current, background: 0x090514, antialias: true, resolution: Math.min(window.devicePixelRatio || 1, 2), autoDensity: true });
-      if (destroyed) return;
+      if (destroyed) { app.destroy(false); return; }
       
       if (onLoadingChange) onLoadingChange({ loading: true, progress: 30, stage: 'canvas' });
       
@@ -584,13 +584,16 @@ export default function PixiSlotReels({
       state.assetStatus = { 'symbols.json': 'loading' };
       try {
         const spriteSheet = await Assets.load('/assets/slots/symbols.json');
+        if (destroyed) return;
         state.textureMap = spriteSheet?.textures || {};
         state.assetStatus['symbols.json'] = 'loaded';
       } catch (assetError) {
+        if (destroyed) return;
         console.warn('Texture atlas failed to load; using procedural art.', assetError);
         state.assetStatus['symbols.json'] = 'error';
       }
       
+      if (destroyed) return;
       if (onLoadingChange) onLoadingChange({ loading: true, progress: 70, stage: 'scene' });
 
       const root = new Container(); app.stage.addChild(root); state.root = root;
@@ -686,13 +689,12 @@ export default function PixiSlotReels({
       state.reelsLayer?.removeChildren();
       state.root?.removeChildren();
       
-      // Destroy PixiJS application with proper options
-      app.destroy(true, { 
-        children: true, 
-        texture: false, 
-        textureSource: false,
-        context: false
-      });
+      // Destroy PixiJS application — pass false to avoid internal _cancelResize crash in v8
+      try {
+        app.destroy(false);
+      } catch (e) {
+        // ignore PixiJS internal cleanup errors
+      }
       
       // Clear state reference
       stateRef.current = {};
