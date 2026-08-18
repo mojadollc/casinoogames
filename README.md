@@ -136,9 +136,69 @@ docker-compose up -d
 - `GET /api/admin/reports/revenue`
 
 ## Tech Stack
-- **Frontend**: React 18, React Router, Axios, Socket.IO Client
+- **Frontend**: React 18, React Router, Axios, Socket.IO Client, PixiJS, GSAP
 - **Backend**: Node.js, Express, Socket.IO
-- **Database**: PostgreSQL, Redis
+- **Database**: MySQL 8, Redis
 - **Payments**: Xendit
 - **Auth**: JWT + 2FA (TOTP)
 - **Security**: Helmet, CORS, Rate Limiting, bcrypt
+
+## Customization
+
+### Adding Custom Slot Game Images
+
+Each slot game can have custom PNG/WebP symbol images.
+
+**Quick Setup:**
+1. Create folder: `frontend/public/assets/slots/{game-slug}/`
+2. Add images named by symbol: `wild.png`, `scatter.png`, `seven.png`, `bar.png`, etc.
+3. Rebuild: `npm run build`
+
+**Supported formats:** PNG (transparent) or WebP
+**Recommended size:** 256x256px
+
+```bash
+# Example: Fortune Tiger
+frontend/public/assets/slots/fortune-tiger/
+├── wild.png      ← Tiger artwork
+├── scatter.png   ← Red envelope
+├── seven.png     ← Golden tiger
+└── bar.png       ← Lantern
+```
+
+See [frontend/public/assets/slots/README.md](frontend/public/assets/slots/README.md) for full documentation.
+
+## Deployment
+
+### Production (VPS)
+
+```bash
+# SSH into server
+ssh root@your-server
+
+# Navigate to project
+cd /opt/casino-platform
+
+# Pull latest changes
+git pull origin main
+
+# Rebuild frontend
+cd frontend && npm run build
+
+# Reload services
+systemctl reload nginx
+pm2 restart all
+```
+
+### Environment Variables
+
+Create `.env` files from examples:
+- `backend/.env` - Database, JWT secret, Xendit keys
+- `frontend/.env.production` - API URL
+
+## Documentation
+
+- [Custom Slot Images Guide](frontend/public/assets/slots/README.md)
+- [Deploy Guide](DEPLOY.md)
+- [Game Controls Guide](GAME_CONTROLS_GUIDE.md)
+- [Game Themes](GAME_THEMES.md)
