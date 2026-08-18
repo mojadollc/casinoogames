@@ -19,7 +19,7 @@ export default function ReelColumn({ result, spinning, index, highlightPositions
       {spinning ? (
         <div className="reel-spinning flex flex-col">
           {[...stripRef.current, ...stripRef.current].map((id, i) => (
-            <SymbolTile key={i} id={id} small symbols={theme.symbols} />
+            <SymbolTile key={i} id={id} small symbols={theme.symbols} theme={theme} />
           ))}
         </div>
       ) : (
@@ -30,6 +30,7 @@ export default function ReelColumn({ result, spinning, index, highlightPositions
               id={id}
               highlight={highlightPositions?.some(p => p[0] === index && p[1] === row)}
               symbols={theme.symbols}
+              theme={theme}
             />
           ))}
         </div>

@@ -30,6 +30,8 @@ function buildTheme(meta, defs) {
   });
   const scatter = defs.find(d => d.type === 'scatter');
   const wild = defs.find(d => d.type === 'wild');
+  // Images are loaded from /assets/slots/{theme}/{symbol}.webp or .png
+  // If no image, falls back to emoji
   return { ...meta, symbols, payouts, weights, order, scatterId: scatter?.id, wildId: wild?.id };
 }
 

@@ -342,27 +342,44 @@ class GameEngine {
     return reels;
   }
 
-  // Generate winning grid (force match on center line)
+  // Generate winning grid (force match on center line with a random mid-tier symbol)
   generateWinningGrid() {
     const reels = this.spinReels();
-    const winSymbol = this.theme.order[2] || this.theme.order[0]; // mid-tier symbol
+    // Pick a random symbol from mid-tier range (index 1–4) so wins vary
+    const midTier = this.theme.order.slice(1, Math.min(5, this.theme.order.length));
+    const winSymbol = midTier[this.rng.generate(0, midTier.length - 1)];
     for (let i = 0; i < 5; i++) reels[i][1] = winSymbol;
     return reels;
   }
 
-  // Generate losing grid (no 3+ matches on center line, no scatters)
+  // Generate losing grid — fully random per cell, just ensure no 3+ center-line match
   generateLosingGrid() {
     const order = this.theme.order.filter(id => id !== this.theme.scatterId);
-    const reels = [];
-    for (let c = 0; c < 5; c++) {
-      // Alternate symbols to break any matches
-      reels.push([
-        order[(c) % order.length],
-        order[(c + 1) % order.length],
-        order[(c + 2) % order.length],
-      ]);
+    let attempts = 0;
+    while (attempts++ < 20) {
+      const reels = [];
+      for (let c = 0; c < 5; c++) {
+        reels.push([
+          order[this.rng.generate(0, order.length - 1)],
+          order[this.rng.generate(0, order.length - 1)],
+          order[this.rng.generate(0, order.length - 1)],
+        ]);
+      }
+      // Verify center row has no 3+ consecutive match
+      const center = reels.map(col => col[1]);
+      let maxRun = 1, run = 1;
+      for (let i = 1; i < 5; i++) {
+        run = center[i] === center[i - 1] ? run + 1 : 1;
+        if (run > maxRun) maxRun = run;
+      }
+      if (maxRun < 3) return reels;
     }
-    return reels;
+    // Safe fallback: stagger symbols so no 3 match
+    return Array.from({ length: 5 }, (_, c) => [
+      order[c % order.length],
+      order[(c + 2) % order.length],
+      order[(c + 1) % order.length],
+    ]);
   }
 
   // Evaluate win: center line + scatter payout
