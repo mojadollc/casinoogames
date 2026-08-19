@@ -1,9 +1,12 @@
+require('dotenv').config({ path: '../backend/.env' });
+
 module.exports = async () => {
   const mysql = require('mysql2/promise');
+  
   const connection = await mysql.createConnection({
     host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'casino',
-    password: process.env.DB_PASSWORD || 'your_password_here',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'casino_platform'
   });
 
@@ -11,7 +14,7 @@ module.exports = async () => {
     // Add multiplier column to game_controls if not exists
     await connection.query(`
       ALTER TABLE game_controls 
-      ADD COLUMN IF NOT EXISTS wild_multiplier DECIMAL(5,2) DEFAULT 2.00
+      ADD COLUMN wild_multiplier DECIMAL(5,2) DEFAULT 2.00
     `);
     
     console.log('✓ Added wild_multiplier column to game_controls');
@@ -35,9 +38,8 @@ module.exports = async () => {
 };
 
 if (require.main === module) {
-  require('dotenv').config({ path: '../backend/.env' });
   module.exports().then(() => process.exit(0)).catch(err => {
-    console.error('Migration failed:', err);
+    console.error('Migration failed:', err.message);
     process.exit(1);
   });
 }
