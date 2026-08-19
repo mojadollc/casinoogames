@@ -129,28 +129,33 @@ router.get('/players', adminAuth, async (req, res) => {
     ]);
 
     let rows = result.rows;
+    const rowIds = rows.map(r => r.id);
 
     // KYC columns from migration 004 — merge if present
-    try {
-      const kyc = await query(
-        `SELECT id, profile_image, address, kyc_bonus_claimed FROM users u ${where} ORDER BY u.created_at DESC LIMIT ? OFFSET ?`,
-        [...params, parseInt(limit), offset]
-      );
-      const kycMap = {};
-      kyc.rows.forEach(r => { kycMap[r.id] = r; });
-      rows = rows.map(r => ({ ...r, ...kycMap[r.id] }));
-    } catch {} // migration 004 not run yet — skip
+    if (rowIds.length) {
+      try {
+        const kyc = await query(
+          `SELECT id, profile_image, address, kyc_bonus_claimed FROM users WHERE id IN (?)`,
+          [rowIds]
+        );
+        const kycMap = {};
+        kyc.rows.forEach(r => { kycMap[r.id] = r; });
+        rows = rows.map(r => ({ ...r, ...kycMap[r.id] }));
+      } catch {} // migration 004 not run yet — skip
+    }
 
     // Geo columns added lazily by geocode endpoint — merge if present
-    try {
-      const geo = await query(
-        `SELECT id, latitude, longitude, geocoded_address, maps_url FROM users u ${where} ORDER BY u.created_at DESC LIMIT ? OFFSET ?`,
-        [...params, parseInt(limit), offset]
-      );
-      const geoMap = {};
-      geo.rows.forEach(r => { geoMap[r.id] = r; });
-      rows = rows.map(r => ({ ...r, ...geoMap[r.id] }));
-    } catch {} // geo columns not yet added — skip
+    if (rowIds.length) {
+      try {
+        const geo = await query(
+          `SELECT id, latitude, longitude, geocoded_address, maps_url FROM users WHERE id IN (?)`,
+          [rowIds]
+        );
+        const geoMap = {};
+        geo.rows.forEach(r => { geoMap[r.id] = r; });
+        rows = rows.map(r => ({ ...r, ...geoMap[r.id] }));
+      } catch {} // geo columns not yet added — skip
+    }
 
     res.json({ players: rows, total: parseInt(countResult.rows[0].total) });
   } catch (err) {
