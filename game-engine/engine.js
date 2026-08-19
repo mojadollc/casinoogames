@@ -384,7 +384,7 @@ class GameEngine {
 
   // Evaluate win: center line + scatter payout
   evaluateWin(reels, bet) {
-    const { payouts, scatterId } = this.theme;
+    const { payouts, scatterId, wildId, symbols } = this.theme;
 
     // Center line win
     const centerLine = reels.map(col => col[1]);
@@ -392,6 +392,8 @@ class GameEngine {
     let winSymbol = null;
     let count = 0;
     const linePositions = [];
+    let appliedMultiplier = 1;
+    let hasWildInWin = false;
 
     const first = centerLine[0];
     if (first && first !== scatterId) {
@@ -400,12 +402,19 @@ class GameEngine {
         if (centerLine[i] === first) {
           c++;
           linePositions.push([i, 1]);
+          // Check if wild is part of the win
+          if (centerLine[i] === wildId) hasWildInWin = true;
         } else break;
       }
       if (c >= 3 && payouts[first]?.[c]) {
         lineWin = payouts[first][c] * bet;
         winSymbol = first;
         count = c;
+        // Apply wild multiplier if wild is in the winning line
+        if (hasWildInWin && symbols[wildId]?.multiplier) {
+          appliedMultiplier = symbols[wildId].multiplier;
+          lineWin *= appliedMultiplier;
+        }
       }
     }
 
@@ -438,6 +447,7 @@ class GameEngine {
       scatterPositions,
       freeSpins,
       totalWin: lineWin + scatterWin,
+      multiplier: appliedMultiplier,
     };
   }
 
@@ -515,7 +525,7 @@ class GameEngine {
     return {
       seed,
       grid: reels.map(col => col.map(id => ({ id, name: this.theme.symbols[id]?.name || id }))),
-      paylineWins: result.lineWin > 0 ? [{ payline: 0, symbol: result.winSymbol, count: result.count, payout: result.lineWin / betAmount }] : [],
+      paylineWins: result.lineWin > 0 ? [{ payline: 0, symbol: result.winSymbol, count: result.count, payout: result.lineWin / betAmount, multiplier: result.multiplier }] : [],
       scatters: { count: result.scatterCount, positions: result.scatterPositions },
       totalWin: result.totalWin,
       freeSpinsAwarded: result.freeSpins,
@@ -526,6 +536,7 @@ class GameEngine {
       forcedOutcome,
       playerClass: this.settings.playerClass,
       dryRun: this.settings.dryRun,
+      multiplier: result.multiplier || 1,
     };
   }
 
