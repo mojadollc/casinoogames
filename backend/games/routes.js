@@ -73,7 +73,7 @@ router.get('/jackpots/total', async (req, res) => {
 
 // Get available games
 router.get('/', async (req, res) => {
-  const result = await query("SELECT id, name, slug, type, rtp, min_bet, max_bet, config FROM games WHERE status = 'active'");
+  const result = await query("SELECT id, name, slug, type, rtp, min_bet, max_bet, config, thumbnail_url FROM games WHERE status = 'active'");
   res.json(result.rows);
 });
 
