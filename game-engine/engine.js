@@ -317,6 +317,7 @@ class GameEngine {
       playerClass: gameSettings.player_class || 'normal',
       dryRun: gameSettings.dry_run || false,
       payoutCap: gameSettings.payout_cap ?? 0,
+      wildMultiplier: gameSettings.wild_multiplier ?? 2,
     };
   }
 
@@ -410,9 +411,9 @@ class GameEngine {
         lineWin = payouts[first][c] * bet;
         winSymbol = first;
         count = c;
-        // Apply wild multiplier if wild is in the winning line
-        if (hasWildInWin && symbols[wildId]?.multiplier) {
-          appliedMultiplier = symbols[wildId].multiplier;
+        // Apply wild multiplier from admin settings if wild is in the winning line
+        if (hasWildInWin) {
+          appliedMultiplier = this.settings.wildMultiplier;
           lineWin *= appliedMultiplier;
         }
       }

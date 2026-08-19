@@ -25,12 +25,13 @@ async function getGameControls(gameId) {
       max_payout: parseFloat(result.rows[0].max_payout),
       payout_cap: parseFloat(result.rows[0].payout_cap),
       dry_run: !!result.rows[0].dry_run,
+      wild_multiplier: parseFloat(result.rows[0].wild_multiplier) || 2,
       player_class_overrides: new Map()
     };
   } else {
-    controls = { win_rate: 25, force_outcome: null, min_payout: 0, max_payout: 30, payout_cap: 0, dry_run: false, player_class_overrides: new Map() };
+    controls = { win_rate: 25, force_outcome: null, min_payout: 0, max_payout: 30, payout_cap: 0, dry_run: false, wild_multiplier: 2, player_class_overrides: new Map() };
     // Insert defaults
-    await query('INSERT IGNORE INTO game_controls (id, game_id, win_rate) VALUES (UUID(), ?, 25)', [gameId]);
+    await query('INSERT IGNORE INTO game_controls (id, game_id, win_rate, wild_multiplier) VALUES (UUID(), ?, 25, 2)', [gameId]);
   }
   gameControlsCache.set(gameId, { data: controls, ts: Date.now() });
   return controls;
@@ -43,8 +44,8 @@ async function saveGameControls(gameId, updates, adminId) {
   gameControlsCache.set(gameId, { data: controls, ts: Date.now() });
 
   await query(`
-    INSERT INTO game_controls (id, game_id, win_rate, force_outcome, min_payout, max_payout, payout_cap, dry_run, updated_by)
-    VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO game_controls (id, game_id, win_rate, force_outcome, min_payout, max_payout, payout_cap, dry_run, wild_multiplier, updated_by)
+    VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON DUPLICATE KEY UPDATE
       win_rate = VALUES(win_rate),
       force_outcome = VALUES(force_outcome),
@@ -52,9 +53,10 @@ async function saveGameControls(gameId, updates, adminId) {
       max_payout = VALUES(max_payout),
       payout_cap = VALUES(payout_cap),
       dry_run = VALUES(dry_run),
+      wild_multiplier = VALUES(wild_multiplier),
       updated_by = VALUES(updated_by),
       updated_at = NOW()
-  `, [gameId, controls.win_rate, controls.force_outcome || null, controls.min_payout, controls.max_payout, controls.payout_cap, controls.dry_run ? 1 : 0, adminId || null]);
+  `, [gameId, controls.win_rate, controls.force_outcome || null, controls.min_payout, controls.max_payout, controls.payout_cap, controls.dry_run ? 1 : 0, controls.wild_multiplier || 2, adminId || null]);
 
   return controls;
 }
@@ -139,7 +141,8 @@ router.post('/:gameId/spin', authenticate, async (req, res) => {
       rtp: g.rtp,
       player_class: playerClass,
       dry_run: controls.dry_run,
-      payout_cap: controls.payout_cap
+      payout_cap: controls.payout_cap,
+      wild_multiplier: controls.wild_multiplier
     };
 
     if (!gameSettings.dry_run) {
@@ -249,7 +252,8 @@ router.post('/:gameId/free-spin', authenticate, async (req, res) => {
       rtp: game.rows[0].rtp,
       player_class: playerClass,
       dry_run: false,
-      payout_cap: controls.payout_cap
+      payout_cap: controls.payout_cap,
+      wild_multiplier: controls.wild_multiplier
     };
 
     const themeId = game.rows[0].slug || 'fortune-tiger';
@@ -726,7 +730,7 @@ router.get('/:gameId/controls', authenticate, isAdmin, async (req, res) => {
 
 router.put('/:gameId/controls', authenticate, isAdmin, async (req, res) => {
   try {
-    const { win_rate, force_outcome, min_payout, max_payout, payout_cap, dry_run } = req.body;
+    const { win_rate, force_outcome, min_payout, max_payout, payout_cap, dry_run, wild_multiplier } = req.body;
     const updates = {};
     if (win_rate !== undefined) updates.win_rate = Math.min(100, Math.max(0, win_rate));
     if (force_outcome !== undefined) updates.force_outcome = force_outcome || null;
@@ -734,6 +738,7 @@ router.put('/:gameId/controls', authenticate, isAdmin, async (req, res) => {
     if (max_payout !== undefined) updates.max_payout = max_payout;
     if (payout_cap !== undefined) updates.payout_cap = payout_cap;
     if (dry_run !== undefined) updates.dry_run = dry_run;
+    if (wild_multiplier !== undefined) updates.wild_multiplier = Math.min(100, Math.max(1, wild_multiplier));
 
     const controls = await saveGameControls(req.params.gameId, updates, req.user.id);
 

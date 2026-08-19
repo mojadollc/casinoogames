@@ -640,6 +640,23 @@ export default function AdminGames() {
                 </div>
               </Field>
 
+              {/* Wild Multiplier */}
+              <Field label={`Wild Multiplier — x${controls.wild_multiplier || 2}`} hint="Multiplier applied when Wild symbol is part of a winning line">
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input type="range" min="1" max="10" step="0.5" value={controls.wild_multiplier || 2}
+                    onChange={e => updateControls('wild_multiplier', parseFloat(e.target.value))}
+                    style={{ flex: 1, accentColor: '#ff2d75' }}
+                  />
+                  <Input type="number" min="1" max="100" step="0.5" value={controls.wild_multiplier || 2}
+                    onChange={e => updateControls('wild_multiplier', parseFloat(e.target.value))}
+                    style={{ width: '70px', textAlign: 'center' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#444466', marginTop: '4px' }}>
+                  <span>x1 — No bonus</span><span>x10 — 10x win</span>
+                </div>
+              </Field>
+
               {/* Force Outcome */}
               <Field label="Force All Spins" hint={controls.force_outcome ? `⚠️ Active: ${controls.force_outcome.toUpperCase()} forced on all spins` : 'Normal random mode'}>
                 <Select value={controls.force_outcome || ''} onChange={e => updateControls('force_outcome', e.target.value || null)}>
