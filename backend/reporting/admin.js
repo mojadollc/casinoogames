@@ -134,9 +134,10 @@ router.get('/players', adminAuth, async (req, res) => {
     // KYC columns from migration 004 — merge if present
     if (rowIds.length) {
       try {
+        const placeholders = rowIds.map(() => '?').join(',');
         const kyc = await query(
-          `SELECT id, profile_image, address, kyc_bonus_claimed FROM users WHERE id IN (?)`,
-          [rowIds]
+          `SELECT id, profile_image, address, kyc_bonus_claimed FROM users WHERE id IN (${placeholders})`,
+          rowIds
         );
         const kycMap = {};
         kyc.rows.forEach(r => { kycMap[r.id] = r; });
@@ -147,9 +148,10 @@ router.get('/players', adminAuth, async (req, res) => {
     // Geo columns added lazily by geocode endpoint — merge if present
     if (rowIds.length) {
       try {
+        const placeholders = rowIds.map(() => '?').join(',');
         const geo = await query(
-          `SELECT id, latitude, longitude, geocoded_address, maps_url FROM users WHERE id IN (?)`,
-          [rowIds]
+          `SELECT id, latitude, longitude, geocoded_address, maps_url FROM users WHERE id IN (${placeholders})`,
+          rowIds
         );
         const geoMap = {};
         geo.rows.forEach(r => { geoMap[r.id] = r; });
