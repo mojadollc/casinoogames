@@ -116,14 +116,16 @@ router.get('/players', adminAuth, async (req, res) => {
     if (status)     { conditions.push('u.status = ?');     params.push(status); }
 
     const where = 'WHERE ' + conditions.join(' AND ');
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 20));
+    const offsetNum = Math.max(0, parseInt(offset) || 0);
 
     const [result, countResult] = await Promise.all([
       query(
         `SELECT u.id, u.username, u.email, u.phone, u.vip_level, u.kyc_status, u.status,
                 u.created_at, COALESCE(w.balance, 0) AS balance
          FROM users u LEFT JOIN wallets w ON w.user_id = u.id
-         ${where} ORDER BY u.created_at DESC LIMIT ? OFFSET ?`,
-        [...params, parseInt(limit), offset]
+         ${where} ORDER BY u.created_at DESC LIMIT ${limitNum} OFFSET ${offsetNum}`,
+        params
       ),
       query(`SELECT COUNT(*) AS total FROM users u ${where}`, params),
     ]);
